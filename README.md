@@ -4,7 +4,7 @@ A sophisticated synthetic data generation system that creates realistic Amazon c
 
 ## 🚀 Features
 
-- Generate thousands of diverse, realistic Amazon customer profiles
+- Generate UNLIMITED  diverse, realistic Amazon customer profiles
 - Parameterized behavioral simulation across a 5-year period using statistical distributions
 - **Enhanced Behavioral Nuance:** Incorporates MBO-inspired parameters (`reward_sensitivity`, `attention_focus`, `category_exploration_propensity`, `habit_formation_speed`) for deeper behavioral modeling.
 - **Improved Profile Diversity:** Utilizes weighted random selection for life stages and adjusted parameter distributions for greater realism.
