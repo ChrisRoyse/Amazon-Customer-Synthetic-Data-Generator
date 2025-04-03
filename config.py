@@ -1,167 +1,618 @@
-# config.py - Refactored for Behavioral Parameters
-
+# config.py - Enhanced for Realistic Customer Diversity
 import random
+import numpy as np
+from collections import defaultdict
 
 # --- Core Simulation Settings ---
-NUM_PROFILES_TO_GENERATE = 25000 # Generate 25,000 profiles
+NUM_PROFILES_TO_GENERATE = 30000 # Generate 30,000 profiles
 SIMULATION_DURATION_YEARS = 5
 SIMULATION_DURATION_DAYS = SIMULATION_DURATION_YEARS * 365
 OUTPUT_DIR = "."
 FILENAME_PREFIX = "amazon_customer_profile_"
-FILENAME_DIGITS = 5 # For 00001 to 25000
+FILENAME_DIGITS = 5
 START_PROFILE_INDEX = 1
-# File size limits removed - prioritizing detail
 
-# --- Foundational Demographic/Contextual Constants ---
-
-INCOME_BRACKETS = ["Low (<$30k)", "Lower-Medium ($30k-$50k)", "Medium ($50k-$75k)", "Upper-Medium ($75k-$120k)", "High ($120k-$200k)", "Very High (>$200k)"]
-LOCATION_TYPES = ["Dense Urban", "Urban", "Suburban", "Small Town", "Rural", "Remote"]
-HOUSEHOLD_COMPOSITIONS = ["Single", "Couple (No Kids)", "Family (Young Kids)", "Family (Teenagers)", "Roommates", "Single Parent", "Multi-generational"]
-DEVICE_TYPES = ["Mobile App (iOS)", "Mobile App (Android)", "Desktop Website (Windows)", "Desktop Website (Mac)", "Tablet App (iPad)", "Tablet App (Android)", "Fire TV", "Echo Device", "Kindle Reader", "Smart Watch", "Other Smart Home Device"]
-LOGIN_FREQUENCIES = ["Multiple times a day", "Daily", "Few times a week", "Weekly", "Bi-Weekly", "Monthly", "Quarterly", "Rarely (< Quarterly)"] # Used for initial estimate, activity drives events
-
-# --- Life Stages (Influence Interests and Parameter Distributions) ---
-# Still useful for setting context and initial interests
-LIFE_STAGES = [
-    {"name": "Student", "age_range": (18, 24), "income_bracket_indices": [0, 1, 2], "interests": ["Books", "Textbooks", "Electronics", "Software", "Office Products", "Clothing", "Snacks", "Video Games", "Streaming Services"], "param_adjustments": {"deal_seeking_propensity": 0.2, "purchase_latency_factor": -0.1, "brand_affinity_strength": -0.1}},
-    {"name": "Young Professional", "age_range": (25, 34), "income_bracket_indices": [2, 3, 4], "interests": ["Electronics", "Clothing", "Home Decor", "Travel", "Fitness", "Career & Business Books", "Restaurants", "Entertainment"], "param_adjustments": {"tech_adoption_propensity": 0.1, "purchase_latency_factor": -0.1}},
-    {"name": "Established Professional", "age_range": (35, 54), "income_bracket_indices": [4, 5], "interests": ["Automotive", "Tools & Home Improvement", "Finance Books", "Luxury Goods", "Travel", "Wine & Spirits", "Smart Home"], "param_adjustments": {"brand_affinity_strength": 0.1, "purchase_latency_factor": 0.1}},
-    {"name": "Parent (Young Children)", "age_range": (25, 44), "income_bracket_indices": [2, 3, 4], "interests": ["Toys & Games", "Baby Products", "Children's Clothing", "Grocery", "Household Supplies", "Parenting Books", "Streaming Services (Kids)", "Subscribe & Save"], "param_adjustments": {"subscribe_save_propensity": 0.3, "activity_level_boost": 0.1, "purchase_latency_factor": 0.1}},
-    {"name": "Parent (Teenagers)", "age_range": (40, 59), "income_bracket_indices": [3, 4, 5], "interests": ["Electronics", "Video Games", "Sports Equipment", "Clothing", "School Supplies", "Grocery", "Automotive", "Entertainment"], "param_adjustments": {"activity_level_boost": 0.05}},
-    {"name": "Empty Nester", "age_range": (50, 69), "income_bracket_indices": [3, 4, 5], "interests": ["Travel", "Hobbies & Crafts", "Garden & Outdoor", "Health & Wellness", "Books", "Home Improvement", "Wine & Spirits", "Restaurants"], "param_adjustments": {"purchase_latency_factor": 0.2, "deal_seeking_propensity": -0.1}},
-    {"name": "Retiree", "age_range": (65, 90), "income_bracket_indices": [1, 2, 3, 4], "interests": ["Books", "Health & Personal Care", "Grocery", "Comfort", "Hobbies", "Travel", "Garden & Outdoor", "Streaming Services"], "param_adjustments": {"tech_adoption_propensity": -0.2, "deal_seeking_propensity": 0.1, "activity_level_boost": -0.1}},
-]
-
-# --- Behavioral Parameter Ranges/Defaults ---
-# These define the *potential range* for individual profiles.
-# Each profile gets its own specific value sampled from these ranges (or distributions).
-# Values typically 0-1 represent probabilities or normalized tendencies.
-# Factors > 1 or < 1 act as multipliers.
+# --- Behavioral Parameter Ranges/Defaults with Distribution Types ---
 BEHAVIORAL_PARAMS_CONFIG = {
-    "activity_level": {"range": (0.05, 0.95), "type": "float"}, # Base tendency for interaction frequency
-    "review_read_propensity": {"range": (0.05, 0.95), "type": "float"}, # Likelihood to view reviews before purchase
-    "review_write_propensity": {"range": (0.01, 0.50), "type": "float"}, # Likelihood to write reviews post-purchase
-    "purchase_latency_factor": {"range": (0.3, 4.0), "type": "float"}, # Multiplier for time between interest & purchase (lower=faster)
-    "deal_seeking_propensity": {"range": (0.05, 0.95), "type": "float"}, # Tendency to look for/use deals, coupons, sales
-    "brand_affinity_strength": {"range": (0.05, 0.90), "type": "float"}, # Likelihood to repurchase same brand vs explore
-    "tech_adoption_propensity": {"range": (0.1, 0.9), "type": "float"}, # Tendency to use newer features/devices/services
-    "cart_abandon_propensity": {"range": (0.05, 0.70), "type": "float"}, # Likelihood to abandon cart before purchase
-    "return_propensity": {"range": (0.02, 0.40), "type": "float"}, # Likelihood to return items post-purchase
-    "session_length_factor": {"range": (0.5, 2.5), "type": "float"}, # Multiplier for average session duration
-    "page_view_factor": {"range": (0.5, 3.0), "type": "float"}, # Multiplier for average page views/session
-    "comparison_shopping_prob": {"range": (0.1, 0.9), "type": "float"}, # Likelihood to use comparison features or view multiple similar items
-    "subscribe_save_propensity": {"range": (0.0, 0.8), "type": "float"}, # Likelihood to use Subscribe & Save
-    "wishlist_usage_propensity": {"range": (0.05, 0.9), "type": "float"}, # Tendency to use wishlist feature
-    "impulse_purchase_prob": {"range": (0.01, 0.30), "type": "float"}, # Base probability of making an unplanned purchase per session/opportunity
-    "prime_video_engagement": {"range": (0.1, 0.9), "type": "float"}, # If Prime, how likely to watch video
-    "amazon_music_engagement": {"range": (0.1, 0.8), "type": "float"}, # If Prime/Music sub, how likely to listen
-    "kindle_engagement": {"range": (0.1, 0.9), "type": "float"}, # If Kindle access/interest, how likely to read
-    "audible_engagement": {"range": (0.1, 0.8), "type": "float"}, # If Audible access/interest, how likely to listen
-    "alexa_shopping_propensity": {"range": (0.0, 0.3), "type": "float"}, # If has Alexa, likelihood to use it for shopping tasks
+    # Core Shopping Behaviors
+    "activity_level": {"range": (0.05, 0.95), "type": "float", "distribution": "beta", "params": {"alpha": 2.0, "beta": 2.0}},
+    "purchase_frequency": {"range": (0.1, 0.9), "type": "float", "distribution": "beta", "params": {"alpha": 2.0, "beta": 3.0}},
+    "cart_size_tendency": {"range": (1, 10), "type": "float", "distribution": "exponential", "params": {"scale": 2.0}},
+    "price_sensitivity": {"range": (0.1, 0.9), "type": "float", "distribution": "beta", "params": {"alpha": 3.0, "beta": 2.0}},
+    "brand_loyalty": {"range": (0.1, 0.9), "type": "float", "distribution": "beta", "params": {"alpha": 2.0, "beta": 2.0}},
+    "deal_seeking_propensity": {"range": (0.05, 0.95), "type": "float", "distribution": "beta", "params": {"alpha": 3.0, "beta": 2.0}},
+    "impulse_buying_tendency": {"range": (0.05, 0.8), "type": "float", "distribution": "beta", "params": {"alpha": 1.5, "beta": 3.0}},
+    
+    # Decision Making Patterns
+    "research_depth": {"range": (0.1, 0.9), "type": "float", "distribution": "beta", "params": {"alpha": 2.0, "beta": 2.0}},
+    "review_influence": {"range": (0.2, 0.9), "type": "float", "distribution": "beta", "params": {"alpha": 3.0, "beta": 2.0}},
+    "social_proof_sensitivity": {"range": (0.1, 0.9), "type": "float", "distribution": "beta", "params": {"alpha": 2.5, "beta": 2.0}},
+    "risk_tolerance": {"range": (0.1, 0.9), "type": "float", "distribution": "beta", "params": {"alpha": 2.0, "beta": 2.5}},
+    "novelty_seeking": {"range": (0.1, 0.9), "type": "float", "distribution": "beta", "params": {"alpha": 2.0, "beta": 2.5}},
+    
+    # Category-Specific Behaviors
+    "tech_adoption_propensity": {"range": (0.1, 0.9), "type": "float", "distribution": "beta", "params": {"alpha": 1.8, "beta": 2.5}},
+    "fashion_consciousness": {"range": (0.1, 0.9), "type": "float", "distribution": "beta", "params": {"alpha": 1.5, "beta": 2.0}},
+    "health_consciousness": {"range": (0.1, 0.9), "type": "float", "distribution": "beta", "params": {"alpha": 2.0, "beta": 2.0}},
+    "eco_consciousness": {"range": (0.1, 0.9), "type": "float", "distribution": "beta", "params": {"alpha": 1.5, "beta": 3.0}},
+    "luxury_orientation": {"range": (0.05, 0.9), "type": "float", "distribution": "exponential", "params": {"scale": 0.2}},
+    
+    # Platform Usage Patterns
+    "mobile_usage": {"range": (0.1, 0.9), "type": "float", "distribution": "beta", "params": {"alpha": 3.0, "beta": 2.0}},
+    "desktop_usage": {"range": (0.1, 0.9), "type": "float", "distribution": "beta", "params": {"alpha": 2.0, "beta": 2.5}},
+    "app_usage": {"range": (0.1, 0.9), "type": "float", "distribution": "beta", "params": {"alpha": 2.5, "beta": 2.0}},
+    "voice_shopping": {"range": (0.0, 0.7), "type": "float", "distribution": "exponential", "params": {"scale": 0.1}},
+    
+    # Service Engagement
+    "prime_engagement": {"range": (0.2, 0.9), "type": "float", "distribution": "beta", "params": {"alpha": 3.0, "beta": 1.5}},
+    "subscription_services": {"range": (0.1, 0.8), "type": "float", "distribution": "beta", "params": {"alpha": 1.5, "beta": 3.0}},
+    "digital_content_consumption": {"range": (0.1, 0.9), "type": "float", "distribution": "beta", "params": {"alpha": 2.0, "beta": 2.0}},
+    "fresh_grocery_usage": {"range": (0.0, 0.8), "type": "float", "distribution": "exponential", "params": {"scale": 0.2}},
+    
+    # Shopping Style
+    "browse_depth": {"range": (0.1, 0.9), "type": "float", "distribution": "beta", "params": {"alpha": 2.0, "beta": 2.0}},
+    "cart_abandonment": {"range": (0.1, 0.7), "type": "float", "distribution": "beta", "params": {"alpha": 2.0, "beta": 3.0}},
+    "wishlist_usage": {"range": (0.1, 0.8), "type": "float", "distribution": "beta", "params": {"alpha": 1.5, "beta": 3.0}},
+    "comparison_shopping": {"range": (0.2, 0.9), "type": "float", "distribution": "beta", "params": {"alpha": 2.5, "beta": 2.0}},
+    
+    # Time-Related Patterns
+    "seasonal_shopping": {"range": (0.2, 0.9), "type": "float", "distribution": "beta", "params": {"alpha": 2.0, "beta": 2.0}},
+    "time_of_day_preference": {"range": (0, 23), "type": "int", "distribution": "custom_daily"},
+    "weekend_shopping": {"range": (0.1, 0.9), "type": "float", "distribution": "beta", "params": {"alpha": 2.0, "beta": 2.0}},
+    
+    # Financial Behaviors
+    "payment_method_diversity": {"range": (1, 4), "type": "int", "distribution": "poisson", "params": {"lam": 1.5}},
+    "installment_usage": {"range": (0.0, 0.7), "type": "float", "distribution": "exponential", "params": {"scale": 0.15}},
+    "credit_usage": {"range": (0.1, 0.9), "type": "float", "distribution": "beta", "params": {"alpha": 2.0, "beta": 2.0}},
+    
+    # Social Behaviors
+    "review_writing": {"range": (0.05, 0.7), "type": "float", "distribution": "exponential", "params": {"scale": 0.15}},
+    "question_asking": {"range": (0.05, 0.6), "type": "float", "distribution": "exponential", "params": {"scale": 0.1}},
+    "social_sharing": {"range": (0.05, 0.7), "type": "float", "distribution": "beta", "params": {"alpha": 1.5, "beta": 3.0}},
+    
+    # Customer Service
+    "support_contact_rate": {"range": (0.05, 0.5), "type": "float", "distribution": "exponential", "params": {"scale": 0.1}},
+    "issue_resolution_patience": {"range": (0.2, 0.9), "type": "float", "distribution": "beta", "params": {"alpha": 2.0, "beta": 2.0}},
+    "feedback_provision": {"range": (0.1, 0.8), "type": "float", "distribution": "beta", "params": {"alpha": 1.5, "beta": 2.5}},
+    
+    # Custom Behavioral Traits
+    "practical_purchase_bias": {"range": (0.1, 0.9), "type": "float", "distribution": "beta", "params": {"alpha": 2.0, "beta": 2.0}},
+    "aesthetic_preference_bias": {"range": (0.1, 0.9), "type": "float", "distribution": "beta", "params": {"alpha": 2.0, "beta": 2.0}},
+    "safety_conscious_bias": {"range": (0.1, 0.9), "type": "float", "distribution": "beta", "params": {"alpha": 2.5, "beta": 2.0}},
+    "bulk_buying_propensity": {"range": (0.1, 0.8), "type": "float", "distribution": "beta", "params": {"alpha": 1.5, "beta": 3.0}},
+    "quality_preference_bias": {"range": (0.2, 0.9), "type": "float", "distribution": "beta", "params": {"alpha": 2.5, "beta": 2.0}},
+    "brand_ethics_importance": {"range": (0.1, 0.9), "type": "float", "distribution": "beta", "params": {"alpha": 1.5, "beta": 3.0}},
+    "time_saving_focus": {"range": (0.2, 0.9), "type": "float", "distribution": "beta", "params": {"alpha": 2.0, "beta": 2.0}},
+    "early_adopter_bias": {"range": (0.1, 0.8), "type": "float", "distribution": "beta", "params": {"alpha": 1.5, "beta": 3.0}},
+    "family_oriented_bias": {"range": (0.1, 0.9), "type": "float", "distribution": "beta", "params": {"alpha": 2.0, "beta": 2.0}},
+    "minimalist_bias": {"range": (0.1, 0.8), "type": "float", "distribution": "beta", "params": {"alpha": 1.5, "beta": 3.0}},
+    "nostalgia_bias": {"range": (0.1, 0.8), "type": "float", "distribution": "beta", "params": {"alpha": 2.0, "beta": 2.5}},
+    "business_oriented_bias": {"range": (0.1, 0.9), "type": "float", "distribution": "beta", "params": {"alpha": 2.0, "beta": 2.5}},
+    "home_improvement_focus": {"range": (0, 0.9), "type": "float", "distribution": "beta", "params": {"alpha": 1.5, "beta": 3.0}},
+    "career_focus": {"range": (0.1, 0.9), "type": "float", "distribution": "beta", "params": {"alpha": 2.0, "beta": 2.0}},
+    "learning_focused_bias": {"range": (0.1, 0.9), "type": "float", "distribution": "beta", "params": {"alpha": 2.0, "beta": 2.0}},
+    "leisure_focused_bias": {"range": (0.1, 0.9), "type": "float", "distribution": "beta", "params": {"alpha": 2.0, "beta": 2.0}}
 }
 
-# --- Interests & Categories ---
+# --- Shopping Patterns & Timing ---
+SHOPPING_PATTERNS = {
+    "weekday_distribution": {
+        "Monday": 0.12,
+        "Tuesday": 0.13,
+        "Wednesday": 0.15,
+        "Thursday": 0.16,
+        "Friday": 0.18,
+        "Saturday": 0.15,
+        "Sunday": 0.11
+    },
+    "hourly_distribution": {
+        "early_morning": {"hours": range(5, 9), "weight": 0.1},
+        "morning": {"hours": range(9, 12), "weight": 0.2},
+        "afternoon": {"hours": range(12, 17), "weight": 0.25},
+        "evening": {"hours": range(17, 22), "weight": 0.35},
+        "late_night": {"hours": range(22, 24).union(range(0, 5)), "weight": 0.1}
+    },
+    "seasonal_peaks": {
+        "holiday_season": {"months": [11, 12], "boost": 1.5},
+        "prime_day": {"months": [7], "days": list(range(10, 17)), "boost": 1.8},
+        "black_friday": {"months": [11], "days": list(range(20, 30)), "boost": 2.0},
+        "back_to_school": {"months": [8], "boost": 1.3},
+        "spring_cleaning": {"months": [3, 4], "boost": 1.2},
+        "summer_shopping": {"months": [6, 7], "boost": 1.1},
+        "post_holiday": {"months": [1], "days": list(range(1, 15)), "boost": 1.2},
+        "tax_refund": {"months": [2, 3], "boost": 1.15}
+    }
+}
+
+# --- Payment Methods ---
+PAYMENT_METHODS = [
+    {"type": "Amazon Store Card", "credit_required": True, "rewards": True, "frequency": 0.15},
+    {"type": "Amazon Prime Rewards Visa", "credit_required": True, "rewards": True, "frequency": 0.20},
+    {"type": "Credit Card", "credit_required": True, "rewards": True, "frequency": 0.35},
+    {"type": "Debit Card", "credit_required": False, "rewards": False, "frequency": 0.25},
+    {"type": "Bank Account", "credit_required": False, "rewards": False, "frequency": 0.10},
+    {"type": "Gift Card", "credit_required": False, "rewards": False, "frequency": 0.15},
+    {"type": "Buy Now Pay Later", "credit_required": True, "rewards": False, "frequency": 0.08},
+    {"type": "Amazon Pay", "credit_required": False, "rewards": False, "frequency": 0.05},
+    {"type": "PayPal", "credit_required": False, "rewards": False, "frequency": 0.07}
+]
+
+# --- Statistical Distributions ---
+# Define functions to sample from different distributions for greater realism
+def sample_normal(mean, std_dev, min_val=None, max_val=None):
+    """Sample from normal distribution with optional clamping"""
+    value = np.random.normal(mean, std_dev)
+    if min_val is not None:
+        value = max(min_val, value)
+    if max_val is not None:
+        value = min(max_val, value)
+    return value
+
+def sample_beta(alpha, beta, min_val=0, max_val=1):
+    """Sample from beta distribution, scaled to min/max"""
+    value = np.random.beta(alpha, beta)
+    return min_val + (max_val - min_val) * value
+
+def sample_exponential(scale, min_val=None, max_val=None):
+    """Sample from exponential distribution with optional clamping"""
+    value = np.random.exponential(scale)
+    if min_val is not None:
+        value = max(min_val, value)
+    if max_val is not None:
+        value = min(max_val, value)
+    return value
+
+def sample_pareto(shape, min_val=None, max_val=None):
+    """Sample from Pareto distribution with optional clamping"""
+    value = np.random.pareto(shape) + 1  # +1 so minimum value is 1
+    if min_val is not None:
+        value = max(min_val, value)
+    if max_val is not None:
+        value = min(max_val, value)
+    return value
+
+def sample_zipf(exponent, size=1, min_val=None, max_val=None):
+    """Sample from Zipf distribution with optional clamping"""
+    value = np.random.zipf(exponent, size)[0]
+    if min_val is not None:
+        value = max(min_val, value)
+    if max_val is not None:
+        value = min(max_val, value)
+    return value
+
+# Weighted random selection from distribution dictionary
+def sample_from_distribution(distribution_dict):
+    """Sample a key from a distribution dictionary where values are probabilities"""
+    items = list(distribution_dict.items())
+    keys = [item[0] for item in items]
+    probabilities = [item[1] for item in items]
+    return random.choices(keys, weights=probabilities, k=1)[0]
+
+# --- Geography & Demographic Distribution ---
+# Population distribution based on US Census
+US_REGION_DISTRIBUTION = {
+    "Northeast": 0.17,  # ME, NH, VT, MA, RI, CT, NY, NJ, PA
+    "Midwest": 0.21,    # OH, MI, IN, WI, IL, MN, IA, MO, ND, SD, NE, KS
+    "South": 0.38,      # DE, MD, DC, VA, WV, KY, NC, SC, TN, GA, FL, AL, MS, AR, LA, OK, TX
+    "West": 0.24        # MT, ID, WY, CO, NM, AZ, UT, NV, WA, OR, CA, AK, HI
+}
+
+# States by region for more specific location information
+US_STATES_BY_REGION = {
+    "Northeast": ["ME", "NH", "VT", "MA", "RI", "CT", "NY", "NJ", "PA"],
+    "Midwest": ["OH", "MI", "IN", "WI", "IL", "MN", "IA", "MO", "ND", "SD", "NE", "KS"],
+    "South": ["DE", "MD", "DC", "VA", "WV", "KY", "NC", "SC", "TN", "GA", "FL", "AL", "MS", "AR", "LA", "OK", "TX"],
+    "West": ["MT", "ID", "WY", "CO", "NM", "AZ", "UT", "NV", "WA", "OR", "CA", "AK", "HI"]
+}
+
+# Population density data informing the urban/rural distribution
+URBAN_RURAL_DISTRIBUTION = {
+    "Dense Urban": 0.25,    # Major city centers
+    "Urban": 0.30,          # Cities and large towns
+    "Suburban": 0.25,       # Suburbs of cities
+    "Small Town": 0.10,     # Small towns
+    "Rural": 0.08,          # Rural areas
+    "Remote": 0.02          # Very remote areas
+}
+
+# Income distribution (approximate US distribution)
+INCOME_DISTRIBUTION = {
+    "Low (<$30k)": 0.25,
+    "Lower-Medium ($30k-$50k)": 0.20,
+    "Medium ($50k-$75k)": 0.18,
+    "Upper-Medium ($75k-$120k)": 0.20,
+    "High ($120k-$200k)": 0.12,
+    "Very High (>$200k)": 0.05
+}
+
+INCOME_BRACKETS = list(INCOME_DISTRIBUTION.keys())
+LOCATION_TYPES = list(URBAN_RURAL_DISTRIBUTION.keys())
+
+# Age distribution (approximate US distribution)
+AGE_DISTRIBUTION = {
+    (18, 24): 0.12,
+    (25, 34): 0.18,
+    (35, 44): 0.16,
+    (45, 54): 0.15,
+    (55, 64): 0.17,
+    (65, 74): 0.14,
+    (75, 90): 0.08
+}
+
+# Household composition distribution
+HOUSEHOLD_COMPOSITIONS = [
+    "Single", "Couple (No Kids)", "Family (Young Kids)", 
+    "Family (Teenagers)", "Roommates", "Single Parent", 
+    "Multi-generational", "Empty Nester", "Extended Family"
+]
+
+HOUSEHOLD_COMPOSITION_DISTRIBUTION = {
+    "Single": 0.28,
+    "Couple (No Kids)": 0.25,
+    "Family (Young Kids)": 0.14,
+    "Family (Teenagers)": 0.12,
+    "Roommates": 0.06,
+    "Single Parent": 0.09,
+    "Multi-generational": 0.04,
+    "Empty Nester": 0.01,
+    "Extended Family": 0.01
+}
+
+# Educational levels
+EDUCATION_LEVELS = {
+    "Some High School": 0.10,
+    "High School Diploma": 0.28,
+    "Some College": 0.16,
+    "Associate's Degree": 0.10,
+    "Bachelor's Degree": 0.22,
+    "Master's Degree": 0.10,
+    "Doctoral/Professional Degree": 0.04
+}
+
+# Employment status
+EMPLOYMENT_STATUS = {
+    "Full-time": 0.48,
+    "Part-time": 0.12,
+    "Self-employed": 0.07,
+    "Student": 0.08,
+    "Retired": 0.16,
+    "Unemployed": 0.05,
+    "Homemaker": 0.04
+}
+
+# --- Device Types & Technical Context ---
+DEVICE_TYPES = [
+    {"name": "Desktop (Windows)", "platform": "web", "conversion_rate": 0.045},
+    {"name": "Desktop (Mac)", "platform": "web", "conversion_rate": 0.048},
+    {"name": "Desktop (Linux)", "platform": "web", "conversion_rate": 0.039},
+    {"name": "Laptop (Windows)", "platform": "web", "conversion_rate": 0.043},
+    {"name": "Laptop (Mac)", "platform": "web", "conversion_rate": 0.046},
+    {"name": "Laptop (Chrome OS)", "platform": "web", "conversion_rate": 0.041},
+    {"name": "Mobile (iOS - iPhone)", "platform": "app", "conversion_rate": 0.038},
+    {"name": "Mobile (iOS - iPhone SE)", "platform": "app", "conversion_rate": 0.036},
+    {"name": "Mobile (iOS - iPhone Pro)", "platform": "app", "conversion_rate": 0.040},
+    {"name": "Mobile (Android - Samsung)", "platform": "app", "conversion_rate": 0.037},
+    {"name": "Mobile (Android - Google)", "platform": "app", "conversion_rate": 0.039},
+    {"name": "Mobile (Android - OnePlus)", "platform": "app", "conversion_rate": 0.035},
+    {"name": "Mobile (Android - Budget)", "platform": "app", "conversion_rate": 0.030},
+    {"name": "Mobile (Web - iOS)", "platform": "web", "conversion_rate": 0.031},
+    {"name": "Mobile (Web - Android)", "platform": "web", "conversion_rate": 0.029},
+    {"name": "Tablet (iPad)", "platform": "app", "conversion_rate": 0.042},
+    {"name": "Tablet (iPad Mini)", "platform": "app", "conversion_rate": 0.040},
+    {"name": "Tablet (iPad Pro)", "platform": "app", "conversion_rate": 0.044},
+    {"name": "Tablet (Android)", "platform": "app", "conversion_rate": 0.038},
+    {"name": "Tablet (Kindle Fire)", "platform": "app", "conversion_rate": 0.041},
+    {"name": "Tablet (Web - iOS)", "platform": "web", "conversion_rate": 0.034},
+    {"name": "Tablet (Web - Android)", "platform": "web", "conversion_rate": 0.032},
+    {"name": "Smart TV (Samsung)", "platform": "app", "conversion_rate": 0.026},
+    {"name": "Smart TV (LG)", "platform": "app", "conversion_rate": 0.025},
+    {"name": "Smart TV (Roku)", "platform": "app", "conversion_rate": 0.027},
+    {"name": "Smart TV (Fire TV)", "platform": "app", "conversion_rate": 0.029},
+    {"name": "Smart TV (Apple TV)", "platform": "app", "conversion_rate": 0.027},
+    {"name": "Echo Device (Standard)", "platform": "voice", "conversion_rate": 0.030},
+    {"name": "Echo Device (Dot)", "platform": "voice", "conversion_rate": 0.028},
+    {"name": "Echo Device (Show)", "platform": "voice", "conversion_rate": 0.032},
+    {"name": "Gaming Console (PlayStation)", "platform": "app", "conversion_rate": 0.023},
+    {"name": "Gaming Console (Xbox)", "platform": "app", "conversion_rate": 0.022},
+    {"name": "Gaming Console (Nintendo)", "platform": "app", "conversion_rate": 0.021},
+    {"name": "Smartwatch (Apple)", "platform": "app", "conversion_rate": 0.018},
+    {"name": "Smartwatch (Samsung)", "platform": "app", "conversion_rate": 0.017},
+    {"name": "Smartwatch (Garmin)", "platform": "app", "conversion_rate": 0.016}
+]
+
+# Device ownership distribution (percentages who own each type)
+DEVICE_OWNERSHIP_DISTRIBUTION = {
+    "Smartphone": 0.85,
+    "Laptop/Desktop": 0.76,
+    "Tablet": 0.53,
+    "Smart TV": 0.49,
+    "Smart Speaker": 0.32,
+    "Smartwatch": 0.21,
+    "Gaming Console": 0.39,
+    "E-reader": 0.26,
+    "Smart Home Device": 0.17
+}
+
+# Technical savviness categories
+TECH_SAVVINESS_LEVELS = [
+    {"level": "Novice", "description": "Basic usage only, limited engagement with technology, tends to stick with familiar interfaces", "params": {"tech_adoption_propensity": 0.2, "mobile_usage": 0.3, "app_usage": 0.2}},
+    {"level": "Basic", "description": "Comfortable with technology but not enthusiastic, follows mainstream adoption", "params": {"tech_adoption_propensity": 0.4, "mobile_usage": 0.5, "app_usage": 0.4}},
+    {"level": "Intermediate", "description": "Regularly uses technology, adopts new services, has multiple devices", "params": {"tech_adoption_propensity": 0.6, "mobile_usage": 0.7, "app_usage": 0.6}},
+    {"level": "Advanced", "description": "Tech-enthusiast, early adopter, uses multiple devices and platforms", "params": {"tech_adoption_propensity": 0.8, "mobile_usage": 0.8, "app_usage": 0.8}},
+    {"level": "Expert", "description": "Cutting-edge user, maximizes feature usage, multiple devices across ecosystems", "params": {"tech_adoption_propensity": 0.9, "mobile_usage": 0.9, "app_usage": 0.9}}
+]
+
+# Platform usage patterns
+PLATFORM_USAGE_DISTRIBUTION = {
+    "Primarily Mobile": 0.38,
+    "Primarily Desktop": 0.30,
+    "Multi-platform": 0.25,
+    "Mobile + Voice": 0.04,
+    "Desktop + Mobile + Voice": 0.03
+}
+
+# Login frequency categories
+LOGIN_FREQUENCIES = ["Multiple times a day", "Daily", "Few times a week", "Weekly", "Bi-Weekly", "Monthly", "Quarterly", "Rarely (< Quarterly)"]
+
+# --- Life Stages & Demographic Contexts ---
+# More diverse life stages with realistic parameters and interests
+LIFE_STAGES = [
+    # Young Adults (18-24)
+    {"name": "College Student", "age_range": (18, 24), "income_bracket_indices": [0, 1], "employment_status": ["Student", "Part-time"], 
+     "interests": ["Textbooks", "Electronics", "Dorm Essentials", "Study Supplies", "Instant Food", "Entertainment", "Budget Fashion", "Fitness Equipment"],
+     "param_adjustments": {"deal_seeking_propensity": 0.3, "tech_adoption_propensity": 0.2, "price_sensitivity": 0.4}},
+    
+    {"name": "Trade School Student", "age_range": (18, 24), "income_bracket_indices": [0, 1, 2], "employment_status": ["Student", "Part-time", "Full-time"],
+     "interests": ["Tools", "Work Wear", "Safety Equipment", "Technical Manuals", "Professional Equipment", "Industry Supplies"],
+     "param_adjustments": {"deal_seeking_propensity": 0.2, "practical_purchase_bias": 0.3, "brand_loyalty": 0.2}},
+    
+    {"name": "Early Career Professional", "age_range": (22, 28), "income_bracket_indices": [1, 2, 3], "employment_status": ["Full-time"], 
+     "interests": ["Business Attire", "Professional Development Books", "Office Supplies", "Meal Prep", "Commuting Gear", "Home Basics", "Budget Furniture"],
+     "param_adjustments": {"brand_loyalty": 0.1, "comparison_shopping": 0.3, "career_focus": 0.4}},
+    
+    {"name": "Service Industry Worker", "age_range": (18, 30), "income_bracket_indices": [0, 1], "employment_status": ["Full-time", "Part-time"], 
+     "interests": ["Comfortable Shoes", "Work Clothes", "Energy Drinks", "Quick Meals", "Budget Entertainment", "Mobile Gaming"],
+     "param_adjustments": {"deal_seeking_propensity": 0.4, "price_sensitivity": 0.5, "time_saving_focus": 0.3}},
+    
+    {"name": "Young Adult Living at Home", "age_range": (18, 25), "income_bracket_indices": [0, 1, 2], "employment_status": ["Student", "Part-time", "Full-time", "Unemployed"], 
+     "interests": ["Video Games", "Entertainment", "Electronics", "Personal Care", "Hobby Supplies", "Fashion"],
+     "param_adjustments": {"price_sensitivity": 0.2, "impulse_buying_tendency": 0.4, "tech_adoption_propensity": 0.3}},
+    
+    {"name": "Military (Early Career)", "age_range": (18, 24), "income_bracket_indices": [1, 2], "employment_status": ["Full-time"], 
+     "interests": ["Fitness Equipment", "Tactical Gear", "Portable Electronics", "Outdoor Equipment", "Casual Clothing"],
+     "param_adjustments": {"practical_purchase_bias": 0.4, "brand_loyalty": 0.3, "activity_level": 0.2}},
+    
+    # Young to Mid Adults (25-34)
+    {"name": "Tech Professional", "age_range": (25, 34), "income_bracket_indices": [2, 3, 4, 5], "employment_status": ["Full-time", "Self-employed"], 
+     "interests": ["Latest Gadgets", "Smart Home", "Gaming", "Tech Books", "Ergonomic Office", "Software Subscriptions"],
+     "param_adjustments": {"tech_adoption_propensity": 0.4, "early_adopter_bias": 0.3, "brand_loyalty": 0.2}},
+    
+    {"name": "Creative Professional", "age_range": (25, 34), "income_bracket_indices": [1, 2, 3, 4], "employment_status": ["Full-time", "Part-time", "Self-employed"], 
+     "interests": ["Art Supplies", "Photography", "Design Books", "Creative Software", "Studio Equipment", "Premium Coffee"],
+     "param_adjustments": {"aesthetic_preference_bias": 0.3, "brand_loyalty": 0.2, "research_depth": 0.2}},
+    
+    {"name": "Healthcare Worker", "age_range": (25, 34), "income_bracket_indices": [2, 3, 4, 5], "employment_status": ["Full-time", "Part-time"], 
+     "interests": ["Scrubs", "Comfortable Shoes", "Medical References", "Wellness Products", "Quick Meals", "Sleep Aids", "Stress Management"],
+     "param_adjustments": {"health_consciousness": 0.3, "time_saving_focus": 0.4, "practical_purchase_bias": 0.3}},
+    
+    {"name": "Young Parent", "age_range": (25, 34), "income_bracket_indices": [1, 2, 3, 4], "employment_status": ["Full-time", "Part-time", "Self-employed", "Homemaker"], 
+     "interests": ["Baby Essentials", "Child Safety", "Parenting Books", "Family Entertainment", "Time-Saving Devices", "Children's Clothing"],
+     "param_adjustments": {"safety_conscious_bias": 0.4, "bulk_buying_propensity": 0.3, "subscription_services": 0.3}},
+    
+    {"name": "Urban Professional", "age_range": (27, 38), "income_bracket_indices": [2, 3, 4, 5], "employment_status": ["Full-time", "Self-employed"], 
+     "interests": ["Fashion", "Fine Dining", "Travel Gear", "Luxury Accessories", "Smart Home", "Premium Electronics", "Entertainment"],
+     "param_adjustments": {"luxury_orientation": 0.3, "tech_adoption_propensity": 0.3, "brand_loyalty": 0.3}},
+    
+    {"name": "First-Time Homeowner", "age_range": (26, 35), "income_bracket_indices": [2, 3, 4], "employment_status": ["Full-time", "Self-employed"], 
+     "interests": ["Home Improvement", "Tools", "Furniture", "Home Décor", "Appliances", "Gardening", "DIY Books"],
+     "param_adjustments": {"home_improvement_focus": 0.4, "research_depth": 0.3, "comparison_shopping": 0.4}},
+    
+    # Mid Adults (35-44)
+    {"name": "Established Professional", "age_range": (35, 44), "income_bracket_indices": [3, 4, 5], "employment_status": ["Full-time", "Self-employed"], 
+     "interests": ["Business Books", "Premium Electronics", "Home Office", "Luxury Items", "Wellness", "Fine Dining", "Smart Home"],
+     "param_adjustments": {"brand_loyalty": 0.3, "quality_preference_bias": 0.4, "luxury_orientation": 0.3}},
+    
+    {"name": "Mid-Career Parent", "age_range": (35, 44), "income_bracket_indices": [2, 3, 4], "employment_status": ["Full-time", "Part-time", "Self-employed", "Homemaker"], 
+     "interests": ["Family Activities", "Educational Toys", "Home Organization", "Bulk Groceries", "Family Entertainment", "Children's Sports Equipment"],
+     "param_adjustments": {"bulk_buying_propensity": 0.3, "family_oriented_bias": 0.4, "subscription_services": 0.3}},
+    
+    {"name": "Small Business Owner", "age_range": (35, 44), "income_bracket_indices": [2, 3, 4, 5], "employment_status": ["Self-employed"], 
+     "interests": ["Business Supplies", "Office Equipment", "Professional Services", "Industry Publications", "Business Software"],
+     "param_adjustments": {"business_oriented_bias": 0.4, "practical_purchase_bias": 0.3, "research_depth": 0.3}},
+    
+    # Mid to Late Adults (45-54)
+    {"name": "Senior Professional", "age_range": (45, 54), "income_bracket_indices": [3, 4, 5], "employment_status": ["Full-time", "Self-employed"], 
+     "interests": ["Premium Products", "Investment Books", "Luxury Travel", "High-End Electronics", "Home Improvement", "Wine & Spirits"],
+     "param_adjustments": {"quality_preference_bias": 0.4, "brand_loyalty": 0.3, "luxury_orientation": 0.4}},
+    
+    {"name": "Parent of Teenagers", "age_range": (40, 54), "income_bracket_indices": [2, 3, 4], "employment_status": ["Full-time", "Part-time", "Self-employed", "Homemaker"], 
+     "interests": ["Teen Electronics", "College Prep", "Family Entertainment", "Household Organization", "Teen Fashion", "Sports Equipment"],
+     "param_adjustments": {"family_oriented_bias": 0.3, "bulk_buying_propensity": 0.2, "research_depth": 0.3}},
+    
+    {"name": "Career Changer", "age_range": (40, 54), "income_bracket_indices": [1, 2, 3, 4], "employment_status": ["Full-time", "Part-time", "Self-employed", "Student"], 
+     "interests": ["Educational Materials", "Career Books", "Professional Development", "Home Office", "Stress Management", "Productivity Tools"],
+     "param_adjustments": {"learning_focused_bias": 0.3, "career_focus": 0.4, "research_depth": 0.3}},
+    
+    # Late Adults (55+)
+    {"name": "Active Retiree", "age_range": (55, 75), "income_bracket_indices": [2, 3, 4], "employment_status": ["Retired", "Part-time"], 
+     "interests": ["Travel", "Hobbies", "Health Products", "Garden", "Entertainment", "Books", "Outdoor Activities"],
+     "param_adjustments": {"leisure_focused_bias": 0.4, "health_consciousness": 0.3, "quality_preference_bias": 0.3}},
+    
+    {"name": "Grandparent", "age_range": (55, 80), "income_bracket_indices": [1, 2, 3, 4], "employment_status": ["Retired", "Part-time", "Full-time"], 
+     "interests": ["Gifts for Grandkids", "Crafts", "Family Games", "Comfort Items", "Traditional Products", "Photography", "Holiday Decorations"],
+     "param_adjustments": {"family_oriented_bias": 0.4, "nostalgia_bias": 0.3, "seasonal_shopping": 0.4}},
+    
+    {"name": "Tech-Savvy Senior", "age_range": (60, 80), "income_bracket_indices": [2, 3, 4], "employment_status": ["Retired", "Part-time", "Self-employed"], 
+     "interests": ["Electronics", "Smart Home", "Digital Content", "Online Learning", "Tech Gadgets", "Photography", "Health Tech"],
+     "param_adjustments": {"tech_adoption_propensity": 0.3, "learning_focused_bias": 0.3, "research_depth": 0.4}},
+    
+    # Special Categories (Across Age Ranges)
+    {"name": "Luxury Shopper", "age_range": (30, 65), "income_bracket_indices": [4, 5], "employment_status": ["Full-time", "Self-employed"], 
+     "interests": ["Designer Fashion", "Luxury Electronics", "Fine Jewelry", "Premium Home Goods", "Gourmet Food & Wine", "High-End Beauty"],
+     "param_adjustments": {"luxury_orientation": 0.8, "brand_loyalty": 0.4, "quality_preference_bias": 0.5, "price_sensitivity": -0.3}},
+    
+    {"name": "Minimalist", "age_range": (25, 55), "income_bracket_indices": [1, 2, 3, 4, 5], "employment_status": ["Full-time", "Part-time", "Self-employed"], 
+     "interests": ["Sustainable Products", "Multi-purpose Items", "Quality Basics", "Digital Content", "Experiential Purchases", "Organization Solutions"],
+     "param_adjustments": {"minimalist_bias": 0.5, "quality_preference_bias": 0.4, "eco_consciousness": 0.3}},
+    
+    {"name": "Eco-Conscious Consumer", "age_range": (18, 70), "income_bracket_indices": [1, 2, 3, 4, 5], "employment_status": ["Full-time", "Part-time", "Self-employed", "Student", "Retired"], 
+     "interests": ["Sustainable Products", "Eco-Friendly Packaging", "Organic Food", "Energy Efficient Devices", "Environmental Books", "Second-Hand Items"],
+     "param_adjustments": {"eco_consciousness": 0.6, "research_depth": 0.4, "brand_ethics_importance": 0.5}},
+    
+    {"name": "Deal Hunter", "age_range": (25, 65), "income_bracket_indices": [0, 1, 2, 3, 4], "employment_status": ["Full-time", "Part-time", "Self-employed", "Student", "Homemaker", "Retired"], 
+     "interests": ["Clearance Items", "Couponing", "Warehouse Deals", "Refurbished Electronics", "Outlet Shopping", "Discount Brands", "Sale Events"],
+     "param_adjustments": {"deal_seeking_propensity": 0.7, "price_sensitivity": 0.6, "comparison_shopping": 0.5}}
+]
+
+# --- Expanded Interest Categories ---
 BASE_INTEREST_CATEGORIES = [
-    # Core Retail
-    "Electronics", "Computers & Accessories", "Software", "Video Games", "Smart Home",
-    "Clothing", "Shoes", "Jewelry", "Watches", "Handbags & Accessories", "Luggage",
-    "Home & Kitchen", "Furniture", "Home Decor", "Bed & Bath", "Appliances",
-    "Tools & Home Improvement", "Garden & Outdoor", "Patio & Lawn",
-    "Grocery & Gourmet Food", "Whole Foods Market", "Health & Personal Care", "Beauty & Grooming", "Luxury Beauty",
-    "Toys & Games", "Baby Products",
-    "Sports & Outdoors", "Fitness & Exercise", "Camping & Hiking",
-    "Automotive", "Motorcycle & Powersports", "Industrial & Scientific",
-    "Pet Supplies", "Office Products", "School Supplies",
-    "Arts, Crafts & Sewing", "Hobbies",
-    "Gift Cards", "Collectibles & Fine Art",
-    "Musical Instruments", "Camera & Photo",
-    # Media & Content
-    "Movies & TV (Buy/Rent)", "Prime Video", "Digital Music (Buy)", "Amazon Music", "Books (Physical)", "Kindle Store", "Audible Books & Originals", "Magazine Subscriptions",
-    # Amazon Specific Programs/Services
-    "Amazon Prime", "Subscribe & Save", "Amazon Fresh", "Amazon Pharmacy", "Alexa Skills",
-    "Amazon Business", "AWS", "Amazon Handmade", "Amazon Launchpad",
-    "Amazon Warehouse Deals", "Amazon Outlet", "Amazon Photos", "Amazon Drive",
-    # Abstract/Behavioral
-    "Deals & Bargains", "Sustainable Products", "Used & Renewed", "Travel", "Business & Investing", "Career Development", "Self-Help", "Cookbooks", "Parenting",
+    # Technology & Electronics
+    "Smartphones & Accessories", "Laptops & Computing", "Gaming & VR", "Smart Home Devices", "Wearable Tech",
+    "Audio Equipment", "Photography & Video", "Home Theater", "Computer Components", "Network & WiFi",
+    "Tech Protection & Security", "Charging & Power", "Streaming Devices", "Digital Storage", "Tech Repair Tools",
+    
+    # Home & Living
+    "Furniture & Decor", "Kitchen & Dining", "Bed & Bath", "Storage & Organization", "Cleaning Supplies",
+    "Home Improvement", "Garden & Outdoor", "Smart Home Integration", "Home Security", "Seasonal Decor",
+    "Pet Supplies", "Laundry & Garment Care", "Home Safety", "Air Quality & Climate", "Pest Control",
+    
+    # Health & Wellness
+    "Fitness Equipment", "Vitamins & Supplements", "Personal Care", "Mental Wellness", "Sleep & Recovery",
+    "Medical Supplies", "Natural Remedies", "Fitness Tracking", "Massage & Relaxation", "Air Purification",
+    "Water Filtration", "Oral Care", "Vision Care", "First Aid", "Mobility Assistance",
+    
+    # Fashion & Accessories
+    "Casual Wear", "Professional Attire", "Athletic Wear", "Shoes & Footwear", "Accessories & Jewelry",
+    "Designer Brands", "Sustainable Fashion", "Seasonal Clothing", "Special Occasion", "Fashion Tech",
+    "Handbags & Wallets", "Watches", "Eyewear", "Children's Clothing", "Maternity Wear",
+    
+    # Food & Beverage
+    "Grocery Staples", "Specialty Foods", "Beverages & Drinks", "Snacks & Treats", "Organic & Natural",
+    "International Foods", "Meal Prep", "Diet Specific", "Coffee & Tea", "Wine & Spirits",
+    "Baking Supplies", "Condiments & Sauces", "Meat & Seafood", "Dairy & Eggs", "Produce",
+    
+    # Entertainment & Media
+    "Streaming Services", "Gaming", "Books (Physical)", "eBooks", "Audiobooks", 
+    "Music (Digital)", "Movies & TV (Digital)", "Board Games", "Outdoor Recreation", "Arts & Crafts", 
+    "Musical Instruments", "Collectibles", "Toys & Games", "Hobby Supplies", "Subscription Boxes",
+    
+    # Work & Professional
+    "Office Supplies", "Business Equipment", "Professional Development", "Work From Home", "Business Services",
+    "Industry Tools", "Safety Equipment", "Professional References", "Networking Tools", "Business Software",
+    "Education & Teaching", "Legal Services", "Financial Services", "HR & Recruiting", "Marketing Materials",
+    
+    # Special Interests & Hobbies
+    "Photography", "Art Supplies", "Crafting", "DIY Tools", "Gardening",
+    "Cooking & Baking", "Sports Equipment", "Travel Gear", "Collecting", "Music Making",
+    "Outdoor Adventure", "Camping & Hiking", "Fishing & Hunting", "Winter Sports", "Water Sports",
+    
+    # Family & Kids
+    "Baby Essentials", "Kids Clothing", "Educational Toys", "Family Games", "Child Safety",
+    "School Supplies", "Kids Tech", "Family Activities", "Parenting Tools", "Kids Room",
+    "Baby Feeding", "Diapering", "Children's Books", "Kids Furniture", "Pregnancy & Maternity",
+    
+    # Automotive & Industrial
+    "Car Accessories", "Motorcycle Gear", "Vehicle Maintenance", "Tools & Equipment", "Car Electronics",
+    "RV & Camping", "Automotive Safety", "Industrial Supplies", "Janitorial & Sanitation", "Material Handling",
+    
+    # Specialty Categories
+    "Sustainable Products", "Luxury Items", "Handmade Goods", "Vintage & Antique", "Limited Editions",
+    "Local Products", "Seasonal Items", "Personalized Items", "Subscription Boxes", "Gift Sets",
+    "Cultural Products", "Religious Items", "Charity & Causes", "Celebrity Brands", "Trending Products"
 ]
 
-# --- Amazon Services (Used to determine potential actions) ---
+# --- Amazon Services ---
 AMAZON_SERVICES = [
-    "Prime Membership", "Prime Video", "Amazon Music Unlimited", "Prime Music (Bundled)", "Kindle Unlimited", "Prime Reading",
-    "Audible Membership (Premium Plus/Plus)", "Amazon Photos", "Amazon Drive (Deprecated but legacy)", "Subscribe & Save",
-    "Amazon Fresh/Whole Foods Delivery", "Amazon Pharmacy", "Alexa Skills Usage",
-    "Amazon Business Account", "AWS Usage (Free/Paid)", "Amazon Handmade Seller/Buyer", "Amazon Launchpad Buyer",
-    "Amazon Warehouse Deals Shopper", "Amazon Outlet Shopper", "Amazon Luna", "Amazon Kids+"
+    "Prime Membership", "Prime Video", "Amazon Music Unlimited", "Prime Music (Bundled)", "Kindle Unlimited", 
+    "Prime Reading", "Audible Plus", "Audible Premium Plus", "Amazon Photos", "Amazon Drive", 
+    "Subscribe & Save", "Amazon Fresh", "Whole Foods Delivery", "Amazon Pharmacy", "Amazon Care", 
+    "Amazon Protect", "Amazon Explore", "Amazon Home Services", "Amazon Key", "Amazon Business", 
+    "AWS Personal", "Amazon Handmade", "Amazon Launchpad", "Amazon Warehouse", "Amazon Outlet", 
+    "Amazon Luna", "Amazon Kids+", "Amazon Renewed", "Amazon Custom", "Alexa Skills",
+    "Amazon Prime Wardrobe", "Amazon Prime Try Before You Buy", "Amazon Family", "Amazon Dash", 
+    "Lightning Deals Access", "Prime Day Access", "Prime Early Access", "Prime Exclusive Deals"
 ]
 
-# --- Minor Life Events (Can slightly perturb parameters/interests over 5 years) ---
+# --- Expanded Minor Life Events ---
 MINOR_LIFE_EVENT_TYPES = [
-    {"name": "Job Change (Minor)", "effect": {"param_adjust": {"activity_level": 0.05, "purchase_latency_factor": -0.05}, "interest_shift": ["Career Development", "Office Products"]}},
-    {"name": "Relocation (Minor)", "effect": {"param_adjust": {"activity_level": 0.1}, "interest_shift": ["Home Decor", "Furniture", "Tools & Home Improvement"]}},
-    {"name": "New Hobby Acquired", "effect": {"param_adjust": {"activity_level": 0.05}, "interest_shift": ["Related Hobby Supplies"]}}, # Placeholder, specific hobby added dynamically
-    {"name": "Income Change (Minor)", "effect": {"param_adjust": {"deal_seeking_propensity": random.uniform(-0.1, 0.1), "purchase_latency_factor": random.uniform(-0.1, 0.1)}}},
-    {"name": "Change in Household Size (Minor)", "effect": {"param_adjust": {"activity_level": 0.05}, "interest_shift": ["Grocery", "Household Supplies"]}},
-    {"name": "Increased Tech Exposure", "effect": {"param_adjust": {"tech_adoption_propensity": 0.1}}},
-    {"name": "Decreased Tech Exposure", "effect": {"param_adjust": {"tech_adoption_propensity": -0.1}}},
+    # Career & Work Life
+    {"name": "Job Promotion", "effect": {"param_adjust": {"activity_level": 0.1, "luxury_orientation": 0.1}, "interest_shift": ["Professional Attire", "Office Upgrades", "Success Books"]}},
+    {"name": "Career Change", "effect": {"param_adjust": {"learning_focused_bias": 0.2}, "interest_shift": ["Educational Materials", "Professional Development", "Industry Specific Items"]}},
+    {"name": "Started Side Business", "effect": {"param_adjust": {"business_oriented_bias": 0.2}, "interest_shift": ["Business Supplies", "Marketing Materials", "Home Office"]}},
+    {"name": "Work From Home Transition", "effect": {"param_adjust": {"home_improvement_focus": 0.3}, "interest_shift": ["Home Office", "Ergonomic Furniture", "Video Conference Gear"]}},
+    {"name": "Career Certification", "effect": {"param_adjust": {"career_focus": 0.2}, "interest_shift": ["Professional References", "Educational Materials", "Professional Development"]}},
+    {"name": "Job Loss", "effect": {"param_adjust": {"price_sensitivity": 0.3, "deal_seeking_propensity": 0.3}, "interest_shift": ["Career Books", "Budget Items", "Professional Development"]}},
+    {"name": "Retirement", "effect": {"param_adjust": {"leisure_focused_bias": 0.3}, "interest_shift": ["Hobbies", "Travel Gear", "Health Products"]}},
+    
+    # Home & Living Situation
+    {"name": "New Pet", "effect": {"param_adjust": {"activity_level": 0.1}, "interest_shift": ["Pet Supplies", "Pet Care", "Home Protection"]}},
+    {"name": "Home Renovation", "effect": {"param_adjust": {"home_improvement_focus": 0.3}, "interest_shift": ["Tools", "Home Decor", "Furniture"]}},
+    {"name": "Downsizing", "effect": {"param_adjust": {"minimalist_bias": 0.2}, "interest_shift": ["Storage Solutions", "Organization", "Space Saving"]}},
+    {"name": "Garden/Yard Project", "effect": {"param_adjust": {"outdoor_focus": 0.2}, "interest_shift": ["Garden Tools", "Plants", "Outdoor Decor"]}},
+    {"name": "Move to New Home", "effect": {"param_adjust": {"home_improvement_focus": 0.3}, "interest_shift": ["Home Essentials", "Furniture", "Moving Supplies"]}},
+    {"name": "Roommate Change", "effect": {"param_adjust": {"activity_level": 0.1}, "interest_shift": ["Home Organization", "Kitchen Supplies", "Household Essentials"]}},
+    {"name": "Home Appliance Upgrade", "effect": {"param_adjust": {"home_improvement_focus": 0.2}, "interest_shift": ["Appliances", "Smart Home", "Kitchen Gadgets"]}},
+    
+    # Health & Lifestyle
+    {"name": "New Fitness Goal", "effect": {"param_adjust": {"health_consciousness": 0.2}, "interest_shift": ["Fitness Equipment", "Workout Clothes", "Supplements"]}},
+    {"name": "Dietary Change", "effect": {"param_adjust": {"health_consciousness": 0.2}, "interest_shift": ["Specialty Foods", "Kitchen Gadgets", "Cookbooks"]}},
+    {"name": "New Health Focus", "effect": {"param_adjust": {"health_consciousness": 0.2}, "interest_shift": ["Health Products", "Vitamins", "Wellness Books"]}},
+    {"name": "Sleep Improvement Focus", "effect": {"param_adjust": {"health_consciousness": 0.2}, "interest_shift": ["Bedding", "Sleep Aids", "Relaxation"]}},
+    {"name": "Minor Health Issue", "effect": {"param_adjust": {"health_consciousness": 0.3}, "interest_shift": ["Medical Supplies", "Health Products", "Comfort Items"]}},
+    {"name": "Wellness Retreat/Program", "effect": {"param_adjust": {"health_consciousness": 0.2}, "interest_shift": ["Wellness Books", "Fitness Equipment", "Health Foods"]}},
+    {"name": "New Doctor/Healthcare Provider", "effect": {"param_adjust": {"health_consciousness": 0.1}, "interest_shift": ["Medical Supplies", "Health Products", "Personal Care"]}},
+    
+    # Hobbies & Interests
+    {"name": "Started Gaming", "effect": {"param_adjust": {"tech_adoption_propensity": 0.2}, "interest_shift": ["Video Games", "Gaming Gear", "Gaming Furniture"]}},
+    {"name": "Photography Interest", "effect": {"param_adjust": {"aesthetic_preference_bias": 0.2}, "interest_shift": ["Cameras", "Photography Gear", "Editing Software"]}},
+    {"name": "Music Learning", "effect": {"param_adjust": {"creative_focus": 0.2}, "interest_shift": ["Musical Instruments", "Music Books", "Audio Equipment"]}},
+    {"name": "Art/Craft Interest", "effect": {"param_adjust": {"creative_focus": 0.2}, "interest_shift": ["Art Supplies", "Craft Tools", "Creative Books"]}},
+    {"name": "Cooking Interest", "effect": {"param_adjust": {"culinary_focus": 0.2}, "interest_shift": ["Kitchen Gadgets", "Cookware", "Specialty Ingredients"]}},
+    {"name": "Started Collecting", "effect": {"param_adjust": {"research_depth": 0.2}, "interest_shift": ["Collectibles", "Storage/Display", "Reference Materials"]}},
+    {"name": "Outdoor Hobby Adoption", "effect": {"param_adjust": {"activity_level": 0.2}, "interest_shift": ["Outdoor Gear", "Specialty Clothing", "Adventure Equipment"]}},
+    
+    # Technology Adoption
+    {"name": "Smart Home Addition", "effect": {"param_adjust": {"tech_adoption_propensity": 0.2}, "interest_shift": ["Smart Devices", "Home Automation", "Tech Accessories"]}},
+    {"name": "New Device Ecosystem", "effect": {"param_adjust": {"tech_adoption_propensity": 0.3}, "interest_shift": ["Electronics", "Tech Accessories", "Digital Services"]}},
+    {"name": "Digital Security Focus", "effect": {"param_adjust": {"tech_adoption_propensity": 0.2}, "interest_shift": ["Security Devices", "Privacy Tools", "Tech Protection"]}},
+    {"name": "Subscription Service Adoption", "effect": {"param_adjust": {"subscription_services": 0.3}, "interest_shift": ["Digital Content", "Streaming Services", "Subscription Boxes"]}},
+    {"name": "Social Media Platform Adoption", "effect": {"param_adjust": {"social_sharing": 0.2}, "interest_shift": ["Mobile Accessories", "Photography Gear", "Tech Gadgets"]}},
+    {"name": "Remote Work Tech Upgrade", "effect": {"param_adjust": {"tech_adoption_propensity": 0.2}, "interest_shift": ["Home Office", "Computer Accessories", "Video Conferencing"]}},
+    
+    # Social & Family
+    {"name": "New Social Circle", "effect": {"param_adjust": {"social_influence": 0.2}, "interest_shift": ["Social Activities", "Group Games", "Entertainment"]}},
+    {"name": "Family Member Visit", "effect": {"param_adjust": {"family_oriented_bias": 0.2}, "interest_shift": ["Guest Supplies", "Entertainment", "Home Comfort"]}},
+    {"name": "Holiday Hosting", "effect": {"param_adjust": {"entertaining_focus": 0.2}, "interest_shift": ["Party Supplies", "Kitchen Gear", "Home Decor"]}},
+    {"name": "New Relationship", "effect": {"param_adjust": {"activity_level": 0.2}, "interest_shift": ["Date Night Items", "Gifts", "Home Updates"]}},
+    {"name": "Relationship Status Change", "effect": {"param_adjust": {"activity_level": 0.1, "home_improvement_focus": 0.2}, "interest_shift": ["Home Decor", "Self-Care", "Personal Development"]}},
+    {"name": "Friend's Life Event", "effect": {"param_adjust": {"social_sharing": 0.1}, "interest_shift": ["Gift Items", "Celebration Supplies", "Event-Specific Goods"]}},
+    {"name": "New Cultural Interest", "effect": {"param_adjust": {"novelty_seeking": 0.2}, "interest_shift": ["Cultural Books", "Specialty Foods", "International Products"]}},
+    
+    # Financial Changes
+    {"name": "Minor Income Increase", "effect": {"param_adjust": {"price_sensitivity": -0.1, "luxury_orientation": 0.1}, "interest_shift": ["Quality Upgrades", "Premium Versions", "Home Improvements"]}},
+    {"name": "Budget Constraints", "effect": {"param_adjust": {"price_sensitivity": 0.3, "deal_seeking_propensity": 0.3}, "interest_shift": ["Budget Items", "Essential Goods", "DIY Supplies"]}},
+    {"name": "Financial Planning Focus", "effect": {"param_adjust": {"research_depth": 0.2}, "interest_shift": ["Finance Books", "Planning Tools", "Organization Solutions"]}},
+    {"name": "Investment Interest", "effect": {"param_adjust": {"research_depth": 0.2, "risk_tolerance": 0.1}, "interest_shift": ["Finance Books", "Business News", "Premium Digital Content"]}},
+    {"name": "Large Purchase Planning", "effect": {"param_adjust": {"research_depth": 0.3, "comparison_shopping": 0.3}, "interest_shift": ["Research Materials", "Product Comparisons", "Review Subscriptions"]}},
+    
+    # Seasonal & Environmental
+    {"name": "Seasonal Wardrobe Update", "effect": {"param_adjust": {"seasonal_shopping": 0.3}, "interest_shift": ["Seasonal Clothing", "Weather Appropriate Gear", "Fashion Accessories"]}},
+    {"name": "Holiday Preparation", "effect": {"param_adjust": {"seasonal_shopping": 0.4}, "interest_shift": ["Holiday Decor", "Gift Items", "Entertaining Supplies"]}},
+    {"name": "Climate/Weather Adaptation", "effect": {"param_adjust": {"seasonal_shopping": 0.3}, "interest_shift": ["Weather Protection", "Home Climate Control", "Emergency Supplies"]}},
+    {"name": "Eco-Friendly Lifestyle Shift", "effect": {"param_adjust": {"eco_consciousness": 0.3}, "interest_shift": ["Sustainable Products", "Eco-Friendly Alternatives", "Reusable Items"]}},
+    {"name": "Local Environmental Event", "effect": {"param_adjust": {"activity_level": 0.1}, "interest_shift": ["Emergency Supplies", "Home Safety", "Protective Equipment"]}}
 ]
-MINOR_EVENT_YEARLY_PROB = 0.4 # Chance per year of a minor event occurring
 
-# --- Event Details Constants ---
-EVENT_TYPES = [
-    # Core Shopping
-    "search", "view_product", "add_to_cart", "remove_from_cart", "purchase", "return_item",
-    "browse_category", "view_recommendations", "update_wishlist", "use_coupon", "apply_gift_card",
-    "view_order_history", "track_package",
-    # Reviews & Q&A
-    "write_review", "view_review", "rate_product", "ask_question", "answer_question", "report_review", "vote_review_helpfulness",
-    # Prime & Media
-    "watch_prime_video", "listen_amazon_music", "read_kindle_book", "listen_audible", "browse_prime_video", "browse_amazon_music", "add_video_watchlist", "add_music_playlist",
-    # Services & Devices
-    "alexa_interaction", "order_whole_foods", "manage_subscribe_save", "use_amazon_photos", "view_aws_console", "use_amazon_pharmacy", "manage_devices",
-    # Account Management
-    "update_profile", "change_address", "change_payment", "contact_customer_service", "view_account_settings", "change_password", "view_security_settings",
-    # Other Interactions
-    "share_product", "view_deal", "clip_coupon", "view_seller_profile", "follow_brand", "view_live_stream", "use_ar_view",
-]
-
-# Lists for generating event details
-ALEXA_INTENTS = ["Ask Weather", "Set Timer", "Play Music", "Control Smart Home", "Ask Question", "Shopping List Add/Remove", "Get News", "Traffic Update", "Set Reminder", "Tell Joke", "Order Product", "Check Order Status", "Play Audiobook", "Call Contact", "Define Word", "Translate Phrase", "Check Calendar", "Get Sports Score", "Find Recipe"]
-RETURN_REASONS = ["Wrong item/size/color", "Damaged/Defective", "Changed mind", "Better price available", "Doesn't fit/work", "Not as described", "Accidental order", "Arrived too late", "Unauthorized purchase", "Found elsewhere", "Quality not adequate", "No longer needed"]
-VIDEO_CONTENT_TYPES = ["Movie", "TV Show Episode", "Documentary", "Sports Event", "Reality TV", "Kids Show", "Prime Original Series", "Prime Original Movie", "Rented Movie", "Purchased TV Show"]
-MUSIC_CONTENT_TYPES = ["Song", "Album", "Playlist (Curated)", "Playlist (User)", "Station", "Podcast", "Purchased Track/Album"]
-BOOK_SOURCES = ["Kindle Unlimited", "Prime Reading", "Purchased", "Library Loan (Overdrive)", "Sample", "Audible Purchase", "Audible Plus Catalog"]
-CUSTOMER_SERVICE_CHANNELS = ["Chat", "Phone", "Email", "Message Us (App/Web)", "Help Pages"]
-CUSTOMER_SERVICE_REASONS = ["Order Issue (Wrong Item, Damaged)", "Return/Refund Inquiry", "Account Problem (Login, Security)", "Payment Issue", "Technical Support (Device, App)", "Product Question", "Delivery Problem (Late, Missing)", "Feedback/Complaint", "Prime Inquiry", "Subscription Issue", "Fraud Concern", "A-to-Z Guarantee Claim"]
-SEARCH_TYPES = ["Product Search", "Prime Video Search", "Amazon Music Search", "Kindle Store Search", "Audible Search", "Whole Foods Search", "General Help Search"]
-VIDEO_GENRES = ["Action", "Adventure", "Comedy", "Drama", "Sci-Fi", "Fantasy", "Horror", "Thriller", "Mystery", "Documentary", "Kids & Family", "Animation", "Romance", "Musical", "Stand-Up Comedy", "Reality TV", "Sports"]
-MUSIC_GENRES = ["Pop", "Rock", "Hip-Hop/Rap", "R&B/Soul", "Electronic/Dance", "Classical", "Jazz", "Country", "Folk/Acoustic", "Blues", "Reggae", "Latin", "World Music", "Soundtracks", "Kids Music", "Indie/Alternative", "Metal", "Christian/Gospel"]
-BOOK_GENRES = ["Fiction", "Non-Fiction", "Mystery/Thriller", "Sci-Fi/Fantasy", "Romance", "Historical Fiction", "Biography/Memoir", "Self-Help", "Business/Finance", "History", "Science", "Cooking/Food", "Travel", "Comics/Graphic Novels", "Children's Books", "Young Adult", "Reference", "Religion & Spirituality"]
-
-# --- Base Event Weights (Adjusted dynamically in simulation) ---
-# Represents the relative likelihood of an event type occurring *if conditions allow*.
-# The simulation logic will use these as a starting point and modify based on profile state/params.
-BASE_EVENT_WEIGHTS = {
-    # Core Shopping
-    "search": 25, "view_product": 30, "add_to_cart": 12, "purchase": 6,
-    "browse_category": 18, "view_recommendations": 10, "update_wishlist": 5,
-    "return_item": 1.5, "track_package": 3, "view_order_history": 4,
-    # Reviews & Q&A
-    "write_review": 1, "view_review": 7, "rate_product": 0.5, "ask_question": 0.3, "answer_question": 0.2, "vote_review_helpfulness": 1,
-    # Prime & Media
-    "watch_prime_video": 15, "listen_amazon_music": 12, "read_kindle_book": 10, "listen_audible": 8,
-    "browse_prime_video": 5, "browse_amazon_music": 4, "add_video_watchlist": 2, "add_music_playlist": 2,
-    # Services & Devices
-    "alexa_interaction": 9, "order_whole_foods": 4, "manage_subscribe_save": 3, "use_amazon_photos": 1, "view_aws_console": 0.1, "use_amazon_pharmacy": 0.5, "manage_devices": 0.5,
-    # Account Management
-    "update_profile": 0.2, "change_address": 0.1, "change_payment": 0.3, "contact_customer_service": 0.7, "view_account_settings": 1.5, "change_password": 0.05,
-    # Other Interactions
-    "share_product": 0.5, "view_deal": 6, "clip_coupon": 4, "view_seller_profile": 1, "follow_brand": 0.5, "view_live_stream": 0.2, "use_ar_view": 0.1,
-    "report_review": 0.1, "view_security_settings": 0.2,
-}
-
-# --- Product Generation Constants ---
-ADJECTIVES1 = ['Premium', 'Basic', 'Advanced', 'Generic', 'Eco-Friendly', 'Smart', 'Heavy-Duty', 'Compact', 'Wireless', 'Organic', 'Handmade', 'Refurbished', 'Professional', 'Portable', 'Essential', 'Deluxe', 'Ultra', 'Standard', 'Lightweight', 'Waterproof', 'Hypoallergenic', 'High-Performance']
-ADJECTIVES2 = ['Series', 'Model', 'Edition', 'Collection', 'Mark', 'Pro', 'Lite', 'Plus', 'Ultra', 'Max', 'Mini', 'Classic', 'Sport', 'Limited', 'Signature', 'Value', 'Performance', '']
-NOUNS = ['Device', 'Item', 'Accessory', 'Kit', 'Solution', 'System', 'Tool', 'Gadget', 'Apparel', 'Component', 'Unit', 'Set', 'Bundle', 'Charger', 'Case', 'Adapter', 'Cable', 'Mount', 'Holder', 'Organizer', 'Refill', 'Supply']
-BRANDS = ['OmniCorp', 'Acme', 'Globex', 'Cyberdyne', 'Stark Industries', 'Wayne Enterprises', 'Initech', 'Bluth Company', 'Pied Piper', 'Hooli', 'GenericBrand', 'NicheMaker', 'Aperture', 'Sirius Cybernetics', 'Tyrell Corp', 'Weyland-Yutani', 'BlueSun', 'MomCorp', 'VirtuCon', 'Soylent', 'Massive Dynamic']
-PRODUCT_MODIFIERS = ['for Kids', 'for Home', 'for Office', 'for Travel', 'Gift Set', 'Value Pack', 'New Version', '2.0', 'NextGen', 'XL', 'Compact', 'Travel Size', '']
+# --- Major Life Events (Less Frequent but Higher Impact) ---
+MAJOR_LIFE_EVENT_TYPES = [
+    {"name": "Marriage/Partnership", "frequency": 0.02, "effect": {"param_adjust": {"family_oriented_bias": 0.4, "home_improvement_focus": 0.3}, "interest_shift": ["Home Essentials", "Furniture", "Registry Items", "Couple Activities"]}},
+    {"name": "Divorce/Separation", "frequency": 0.01, "effect": {"param_adjust": {"activity_level": 0.2, "price_sensitivity": 0.2}, "interest_shift": ["Home Essentials", "Self-Help", "Organization", "New Hobbies"]}},
+    {"name": "New Child", "frequency": 0.02, "effect": {"param_adjust": {"family_oriented_bias": 0.5, "safety_conscious_bias": 0.4}, "interest_shift": ["Baby Essentials", "Child Safety", "Parenting Books", "Family Activities"]}},
+    {"name": "Child Leaving Home", "frequency": 0.01, "effect": {"param_adjust": {"leisure_focused_bias": 0.3, "home_improvement_focus": 0.2}, "interest_shift": ["Travel", "Hobbies", "Home Updates", "Personal Development"]}},
+    {"name": "Major Relocation", "frequency": 0.03, "effect": {"param_adjust": {"activity_level": 0.3, "home_improvement_focus": 0.4}, "interest_shift": ["Moving Supplies", "Furniture", "Home Essentials", "Local Resources"]}},
+    {"name": "Major Career Shift", "frequency": 0.02, "effect": {"param_adjust": {"career_focus": 0.4, "learning_focused_bias": 0.3}, "interest_shift": ["Professional Development", "Career Books", "Industry Tools", "Work Attire"]}},
+    {"name": "Significant Health Event", "frequency": 0.01, "effect": {"param_adjust": {"health_consciousness": 0.5, "research_depth": 0.3}, "interest_shift": ["Medical Supplies", "Health Books", "Wellness Products", "Adaptive Equipment"]}},
+    {"name": "Home Purchase", "frequency": 0.02, "effect": {"param_adjust": {"home_improvement_focus": 0.5, "research_depth": 0.3}, "interest_shift": ["Home Essentials", "Tools", "Furniture", "Home Improvement"]}},
+    {"name": "Retirement", "frequency": 0.01, "effect": {"param_adjust": {"leisure_focused_bias": 0.4, "health_consciousness": 0.3}, "interest_shift": ["Travel", "Hobbies", "Health Products", "Home Comfort"]}},
+    {"name": "Major Financial Change", "frequency": 0.01, "effect": {"param_adjust": {"price_sensitivity": 0.4, "research_depth": 0.3}, "interest_shift": ["Financial Planning", "Budget Solutions", "Investment Resources"]}}
+] 

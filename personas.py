@@ -190,17 +190,17 @@ def create_base_profile(profile_index, simulation_start_date):
             if "Desktop" in device: weight *= (1.5 - tech_propensity) # Less likely primary for high tech?
             device_weights.append((device, max(0.1, weight))) # Ensure min weight
 
-        final_devices = set()
+        final_devices = []  # Change from set to list
         attempts = 0
         while len(final_devices) < num_devices and attempts < num_devices * 3:
             chosen_device = utils.select_weighted_item(device_weights)
-            if chosen_device:
-                final_devices.add(chosen_device)
+            if chosen_device and chosen_device not in final_devices:  # Check for uniqueness manually
+                final_devices.append(chosen_device)  # Append to list instead of adding to set
             attempts += 1
         if not final_devices: # Ensure at least one device
-             final_devices.add(random.choice(config.DEVICE_TYPES))
+             final_devices.append(random.choice(config.DEVICE_TYPES))  # Append to list
 
-        primary_device = random.choice(list(final_devices))
+        primary_device = random.choice(final_devices)
 
         # 7. Determine Initial Login Frequency (Estimate based on activity level)
         activity_level = behavioral_params["activity_level"]
@@ -235,7 +235,7 @@ def create_base_profile(profile_index, simulation_start_date):
             },
             "device_usage": {
                 "primary_device": primary_device, # Inferrable from usage patterns
-                "all_devices": sorted(list(final_devices)), # Observable
+                "all_devices": sorted(final_devices, key=lambda d: d['name']), # Sort by device name
                 "login_frequency_initial_estimate": login_freq, # Estimate, actual usage is in log
             },
             "interests_initial": sorted(list(interests)), # Inferrable from browsing/purchases
@@ -256,7 +256,7 @@ def create_base_profile(profile_index, simulation_start_date):
                 "used_services": used_services,
                 "behavioral_params": behavioral_params, # Store the sampled parameters here
                 "login_frequency": login_freq, # Store initial estimate
-                "devices": list(final_devices),
+                "devices": final_devices, # Removed redundant list() conversion
                 "primary_device": primary_device,
                 # Dynamic state
                 "cart": [],
