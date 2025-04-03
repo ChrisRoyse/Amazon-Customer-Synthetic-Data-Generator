@@ -1,6 +1,6 @@
 # Amazon Customer Synthetic Data Generator
 
-A sophisticated synthetic data generation system that creates realistic Amazon customer profiles with nuanced behavioral simulation over time. This project produces detailed customer profiles with activity logs spanning multiple years, driven by parameterized behavioral models, including new parameters inspired by Marketing Behavior Ontology (MBO) concepts, leading to more robust and realistic data suitable for advanced behavioral modeling.
+A sophisticated synthetic data generation system that creates realistic Amazon customer profiles with nuanced behavioral simulation over time. This project produces detailed customer profiles with activity logs spanning multiple years, driven by parameterized behavioral models, including new parameter concepts, leading to more robust and realistic data suitable for advanced behavioral modeling.
 
 ## 🚀 Features
 
