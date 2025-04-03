@@ -4,7 +4,7 @@ import numpy as np
 from collections import defaultdict
 
 # --- Core Simulation Settings ---
-NUM_PROFILES_TO_GENERATE = 30000 # Generate 30,000 profiles
+NUM_PROFILES_TO_GENERATE = 20000 # Generate 30,000 profiles
 SIMULATION_DURATION_YEARS = 5
 SIMULATION_DURATION_DAYS = SIMULATION_DURATION_YEARS * 365
 OUTPUT_DIR = "."
@@ -110,7 +110,7 @@ SHOPPING_PATTERNS = {
         "morning": {"hours": range(9, 12), "weight": 0.2},
         "afternoon": {"hours": range(12, 17), "weight": 0.25},
         "evening": {"hours": range(17, 22), "weight": 0.35},
-        "late_night": {"hours": range(22, 24).union(range(0, 5)), "weight": 0.1}
+        "late_night": {"hours": [22, 23, 0, 1, 2, 3, 4], "weight": 0.1} # Combined hours for late night
     },
     "seasonal_peaks": {
         "holiday_season": {"months": [11, 12], "boost": 1.5},
