@@ -1,13 +1,16 @@
 # Amazon Customer Synthetic Data Generator
 
-A sophisticated synthetic data generation system that creates realistic Amazon customer profiles with behavioral simulation over time. This project produces detailed customer profiles with activity logs spanning multiple years, driven by parameterized behavioral models rather than fixed archetypes.
+A sophisticated synthetic data generation system that creates realistic Amazon customer profiles with nuanced behavioral simulation over time. This project produces detailed customer profiles with activity logs spanning multiple years, driven by parameterized behavioral models, including new parameters inspired by Marketing Behavior Ontology (MBO) concepts, leading to more robust and realistic data suitable for advanced behavioral modeling.
 
 ## 🚀 Features
 
 - Generate thousands of diverse, realistic Amazon customer profiles
 - Parameterized behavioral simulation across a 5-year period using statistical distributions
+- **Enhanced Behavioral Nuance:** Incorporates MBO-inspired parameters (`reward_sensitivity`, `attention_focus`, `category_exploration_propensity`, `habit_formation_speed`) for deeper behavioral modeling.
+- **Improved Profile Diversity:** Utilizes weighted random selection for life stages and adjusted parameter distributions for greater realism.
 - Detailed activity logs with timestamps and contextual information
 - Realistic product interactions, purchases, and service usage patterns
+- **New Event Type:** Includes `reorder_item` events driven by habit formation parameters.
 - Minor life events that affect customer behavior over time
 - Seasonal and promotional effects on shopping behavior
 - Prime membership and Amazon service adoption simulation
@@ -55,7 +58,7 @@ python generate_profiles.py
 
 ## ⚙️ Configuration
 
-The `config.py` file contains all configurable parameters for the simulation:
+The `config.py` file contains all configurable parameters for the simulation, including core settings, behavioral parameter distributions, and life stage definitions.
 
 ### Core Settings
 ```python
@@ -70,35 +73,40 @@ START_PROFILE_INDEX = 1           # Starting index for profile generation
 ### Behavioral Parameters
 The system uses continuous behavioral parameters sampled from various statistical distributions (beta, exponential, normal, etc.) rather than discrete archetypes, allowing for more realistic variation. See `config.py` for the full list and distribution details.
 
+**New MBO-Inspired Parameters:** Recent additions include parameters like `reward_sensitivity`, `attention_focus`, `category_exploration_propensity`, and `habit_formation_speed` to model more complex consumer decision-making processes.
+
 ```python
 BEHAVIORAL_PARAMS_CONFIG = {
     # Core Shopping Behaviors
     "activity_level": {"range": (0.05, 0.95), "type": "float", "distribution": "beta", "params": {"alpha": 2.0, "beta": 2.0}},
     "purchase_frequency": {"range": (0.1, 0.9), "type": "float", "distribution": "beta", "params": {"alpha": 2.0, "beta": 3.0}},
     "price_sensitivity": {"range": (0.1, 0.9), "type": "float", "distribution": "beta", "params": {"alpha": 3.0, "beta": 2.0}},
-    # ... and many more parameters defined with ranges, types, and distributions
+    # ... and many more parameters defined with ranges, types, and distributions, including MBO-inspired ones
 }
 ```
 
 ### Life Stage Influences
 Life stages provide initial context (demographics, interests) and apply adjustments to the sampled behavioral parameters. See `config.py` for the full list of life stages, their associated interests, and parameter adjustments.
 
+**Weighted Selection:** Life stages are now selected using weights defined in `config.py` (e.g., `{"name": "...", "weight": 10, ...}`) to better reflect real-world demographic distributions.
+
 ```python
 LIFE_STAGES = [
     {"name": "College Student", "age_range": (18, 24), "income_bracket_indices": [0, 1], 
      "interests": ["Textbooks", "Electronics", "Dorm Essentials", ...], 
-     "param_adjustments": {"deal_seeking_propensity": 0.3, "tech_adoption_propensity": 0.2, ...}},
-    # ... many other detailed life stages
+     "param_adjustments": {"deal_seeking_propensity": 0.3, "tech_adoption_propensity": 0.2, ...},
+     "weight": 8}, # Example weight
+    # ... many other detailed life stages with weights
 ]
 ```
 
 ## 🏗️ Project Structure
 
-- **`config.py`**: Core configuration, constants, distributions, life stages, interests, etc.
+- **`config.py`**: Core configuration, constants, distributions, life stages, interests, MBO parameters, etc.
 - **`generate_profiles.py`**: Main script for generating profiles. Orchestrates the process.
-- **`personas.py`**: Creates base customer profiles, samples behavioral parameters based on config and life stage.
+- **`personas.py`**: Creates base customer profiles, samples behavioral parameters (including MBO) based on config and weighted life stage selection.
 - **`simulation.py`**: Simulates customer activity over the defined time period based on parameters and state.
-- **`event_generator.py`**: Generates specific event details (e.g., search query, product viewed, purchase details) for the activity log, influenced by parameters.
+- **`event_generator.py`**: Generates specific event details (e.g., search query, product viewed, purchase details, reorder) for the activity log, influenced by parameters (including MBO).
 - **`utils.py`**: Utility functions for ID generation, naming, dates, pricing, weighted choices, etc.
 
 ## 📊 Data Model
@@ -138,6 +146,16 @@ LIFE_STAGES = [
   },
   "interests_initial": ["Electronics", "Home Decor", "Travel"],
   "interests_final": ["Electronics", "Home Decor", "Travel", "Smart Home", "Wine & Spirits"],
+  "behavioral_parameters": {
+      "activity_level": 0.65,
+      "purchase_frequency": 0.4,
+      "price_sensitivity": 0.7,
+      "reward_sensitivity": 0.8, 
+      "attention_focus": 0.5,
+      "category_exploration_propensity": 0.3,
+      "habit_formation_speed": 0.6,
+      "...": "..." 
+  },
   "activity_log": [
     {
       "timestamp": "2020-01-02T19:12:23Z",
@@ -151,6 +169,19 @@ LIFE_STAGES = [
         "filters_used": ["prime", "rating_4_star_up"]
       }
     },
+    {
+      "timestamp": "2021-03-15T10:05:00Z",
+      "event_type": "reorder_item",
+      "details": {
+         "session_id": "...",
+         "device_used": {"name": "Desktop (Windows)", "platform": "web", "conversion_rate": 0.045},
+         "product_id": "B07XYZABCD",
+         "product_name": "Favorite Coffee Pods - 100 Count",
+         "category": "Grocery",
+         "price": 35.99,
+         "quantity": 1 
+      }
+    }
     // Many more events...
   ],
   "life_events": [
@@ -167,8 +198,8 @@ LIFE_STAGES = [
 ## 🔄 Simulation Approach
 
 ### Behavioral Parameters & Personas
-1.  A life stage is chosen randomly from `config.py`.
-2.  Behavioral parameters (activity level, price sensitivity, etc.) are sampled for the profile using statistical distributions (beta, exponential, etc.) defined in `config.py`.
+1.  A life stage is chosen based on weighted probabilities defined in `config.py`.
+2.  Behavioral parameters (activity level, price sensitivity, **MBO-inspired parameters like `reward_sensitivity`, `habit_formation_speed`**, etc.) are sampled for the profile using statistical distributions (beta, exponential, etc.) defined in `config.py`.
 3.  Adjustments are applied to these parameters based on the chosen life stage.
 4.  Initial demographics, interests, device usage, and Amazon service status are determined based on the life stage and sampled parameters.
 5.  This forms the base profile and its internal state for simulation.
@@ -176,8 +207,8 @@ LIFE_STAGES = [
 ### Event Generation
 1.  The simulation advances time step by step over the configured duration (e.g., 5 years).
 2.  The time until the next event is calculated using an exponential distribution based on the profile's current `activity_level` and seasonal factors.
-3.  The type of the next event (e.g., `search`, `view_product`, `purchase`, `watch_prime_video`) is chosen probabilistically. These probabilities are weighted based on the profile's behavioral parameters and current state (e.g., a profile with high `deal_seeking_propensity` is more likely to `clip_coupon`; `purchase` is more likely if the cart has items).
-4.  Detailed information for the chosen event is generated by `event_generator.py`, again influenced by parameters (e.g., search query terms influenced by interests and deal seeking; number of reviews read influenced by `review_read_propensity`).
+3.  The type of the next event (e.g., `search`, `view_product`, `purchase`, `watch_prime_video`, **`reorder_item`**) is chosen probabilistically. These probabilities are weighted based on the profile's behavioral parameters (including MBO-inspired ones like `attention_focus` or `category_exploration_propensity`) and current state (e.g., a profile with high `deal_seeking_propensity` is more likely to `clip_coupon`; `purchase` is more likely if the cart has items; `reorder_item` is influenced by `habit_formation_speed`).
+4.  Detailed information for the chosen event is generated by `event_generator.py`, again influenced by parameters (e.g., search query terms influenced by interests and deal seeking; number of reviews read influenced by `review_read_propensity`; reorder likelihood influenced by `habit_formation_speed`).
 5.  The profile's internal state (cart contents, viewed products, interests, etc.) is updated based on the event.
 6.  Minor life events (e.g., `New Pet`, `Job Promotion`, `New Fitness Goal`) can occur periodically, slightly altering behavioral parameters and interests over the simulation duration.
 7.  Seasonal effects (holidays, Prime Day) influence activity levels throughout the year.
@@ -190,6 +221,7 @@ Each profile is saved as a separate JSON file. The standard output contains:
 - Amazon account status (Prime status, services used - initial and final)
 - Device usage patterns
 - Initial and final interests
+- Sampled behavioral parameters (including MBO-inspired ones)
 - A detailed activity log of events over the simulation period
 - A list of minor life events that occurred during the simulation
 
@@ -202,6 +234,7 @@ import json
 import os
 import glob
 from collections import Counter
+import numpy as np # Added for potential analysis
 
 # Load generated profiles
 profile_files = glob.glob("amazon_customer_profile_*.json")
@@ -248,6 +281,15 @@ else:
     print("\nTop 5 Primary Devices:")
     for device, count in device_counts:
         print(f"- {device}: {count}")
+        
+    # Example: Analyze a behavioral parameter (e.g., habit_formation_speed)
+    habit_speeds = [p.get("behavioral_parameters", {}).get("habit_formation_speed") for p in profiles if p.get("behavioral_parameters", {}).get("habit_formation_speed") is not None]
+    if habit_speeds:
+        avg_habit_speed = np.mean(habit_speeds)
+        print(f"\nAverage Habit Formation Speed (in sample): {avg_habit_speed:.2f}")
+    else:
+        print("\nHabit Formation Speed data not found in sample profiles.")
+
 ```
 
 ## 🤝 Contributing

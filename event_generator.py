@@ -1,8 +1,9 @@
-# event_generator.py - Refactored for Behavioral Parameters
+# event_generator.py - Refactored for Behavioral Parameters and MBO Integration
 
 import random
 import datetime
 import logging
+import math # Added for sigmoid
 
 # Import necessary components from other modules
 try:
@@ -34,8 +35,13 @@ def generate_event_details(event_type, profile, current_timestamp):
     details = {"session_id": state["current_session_id"]}
 
     # --- Helper Functions within context ---
-    def get_relevant_category(bias_towards_recent=0.6):
-        # (Keep existing logic - relies on interests/history, not direct params)
+    def get_relevant_category(bias_towards_recent_base=0.6):
+        # MBO Integration: category_exploration_propensity influences bias
+        exploration_propensity = params.get('category_exploration_propensity', 0.5)
+        # Lower propensity increases bias towards recent (less exploration)
+        # Higher propensity decreases bias towards recent (more exploration)
+        bias_towards_recent = bias_towards_recent_base + (0.5 - exploration_propensity) * 0.4 # Adjust bias +/- 20%
+
         possible_cats = list(state.get("current_interests", config.BASE_INTEREST_CATEGORIES))
         if not possible_cats: possible_cats = config.BASE_INTEREST_CATEGORIES
         recent_cats = []
@@ -84,13 +90,19 @@ def generate_event_details(event_type, profile, current_timestamp):
     def get_device():
         # (Keep existing logic - relies on state['devices'])
         devices = state.get("devices", [])
-        primary_device = state.get("primary_device")
+        primary_device_info = state.get("primary_device") # Get the full dict
+        primary_device_name = primary_device_info.get("name") if primary_device_info else None
+
         if not devices: return "Unknown Device"
-        if primary_device and (random.random() < 0.7 or len(devices) == 1):
-            return primary_device
+
+        # Extract names for comparison
+        device_names = [d.get("name") for d in devices if d.get("name")]
+
+        if primary_device_name and (random.random() < 0.7 or len(devices) == 1):
+            return primary_device_name
         else:
-            secondary_devices = [d for d in devices if d != primary_device]
-            return random.choice(secondary_devices) if secondary_devices else primary_device
+            secondary_device_names = [name for name in device_names if name != primary_device_name]
+            return random.choice(secondary_device_names) if secondary_device_names else primary_device_name
 
     # --- Event Type Logic ---
     device_used = get_device()
@@ -100,15 +112,22 @@ def generate_event_details(event_type, profile, current_timestamp):
     if event_type == "search":
         search_type = random.choice(config.SEARCH_TYPES)
         query_base = get_relevant_category() if search_type == "Product Search" else random.choice(["action movie", "popular playlist", "thriller novel", "how to"])
-        # More specific search terms based on parameters?
+        # MBO Integration: attention_focus influences query specificity
+        attention_focus = params.get("attention_focus", 0.5)
         mods = ['reviews', 'best', 'cheap', 'used', 'refurbished', 'gift', 'organic', 'sustainable', '']
-        if random.random() < params.get("deal_seeking_propensity", 0.3): mods.extend(['deals', 'discount', 'coupon', 'clearance'])
-        if random.random() < params.get("brand_affinity_strength", 0.3) * 0.5: # Lower chance to search specific brand
-             # Find a brand previously purchased?
-             all_brands = [item['brand'] for order in state.get('orders', []) for item in order.get('items', []) if 'brand' in item]
-             if all_brands: mods.append(random.choice(all_brands))
+        # Higher attention focus -> less likely to add random mods
+        num_mods_to_add = random.randint(0, 2)
+        if random.random() > attention_focus * 0.8: # More likely to add mods if low attention
+             mods_to_add = random.sample(mods, k=num_mods_to_add)
+        else:
+             mods_to_add = []
 
-        query = f"{query_base} {random.choice(mods)}".strip().replace("  ", " ")
+        if random.random() < params.get("deal_seeking_propensity", 0.3): mods_to_add.extend(random.sample(['deals', 'discount', 'coupon', 'clearance'], k=1))
+        if random.random() < params.get("brand_affinity_strength", 0.3) * 0.5: # Lower chance to search specific brand
+             all_brands = [item['brand'] for order in state.get('orders', []) for item in order.get('items', []) if 'brand' in item]
+             if all_brands: mods_to_add.append(random.choice(all_brands))
+
+        query = f"{query_base} {' '.join(mods_to_add)}".strip().replace("  ", " ")
         results_count = random.randint(0, 5000) if query else 0
         # More filters used if high comparison propensity?
         num_filters = random.randint(0, 1 + int(params.get("comparison_shopping_prob", 0.3) * 4))
@@ -124,7 +143,6 @@ def generate_event_details(event_type, profile, current_timestamp):
         state["search_history"] = state["search_history"][-50:]
 
     elif event_type == "view_product":
-        # (Generation logic largely unchanged, relies on history/interests)
         product = None
         source = "unknown"
         if state.get("search_history") and random.random() < 0.5: source = "search_results"; #... (rest of logic)
@@ -136,9 +154,15 @@ def generate_event_details(event_type, profile, current_timestamp):
         product = generate_product_for_event() # Assume full logic exists here as before
 
         if not product: return None
-        # View duration influenced by latency factor? (Lower latency = shorter views?)
+        # MBO Integration: View duration influenced by attention_focus and latency factor
         latency_factor = params.get("purchase_latency_factor", 1.0)
-        view_duration = random.randint(5, 300) * (1.0 / max(0.5, latency_factor)) # Faster look if low latency?
+        attention_focus = params.get("attention_focus", 0.5)
+        # Base duration + boost from attention - penalty from latency
+        base_view_duration = random.randint(5, 150)
+        attention_boost = attention_focus * 150 # Max boost of 150s
+        latency_penalty_factor = max(0.5, latency_factor) # Ensure divisor isn't too small
+        view_duration = (base_view_duration + attention_boost) / latency_penalty_factor
+
         details.update(product)
         details["source"] = source
         details["view_duration_seconds"] = round(max(3, view_duration)) # Min 3 seconds
@@ -146,7 +170,6 @@ def generate_event_details(event_type, profile, current_timestamp):
         state["viewed_products"] = state["viewed_products"][-50:]
 
     elif event_type == "add_to_cart":
-        # (Source selection logic largely unchanged, relies on history/interests)
         product_to_add = None
         source = "unknown"
         # ... (selection logic based on viewed, wishlist, search, impulse) ...
@@ -177,7 +200,6 @@ def generate_event_details(event_type, profile, current_timestamp):
         state["cart"] = cart
 
     elif event_type == "remove_from_cart":
-        # (Logic unchanged, relies on cart state)
         cart = state.get("cart", [])
         if not cart: return None
         removed_item = random.choice(cart)
@@ -217,9 +239,13 @@ def generate_event_details(event_type, profile, current_timestamp):
         total = sum(item['price_per_item'] * item['quantity'] for item in items_to_buy)
         order_id = utils.generate_order_id()
         coupon_used = None
-        # Higher chance to use coupon if deal seeker and coupon available
-        if state.get("active_promotions") and random.random() < params.get("deal_seeking_propensity", 0.3):
-             coupon_code = list(state["active_promotions"].keys())[0]
+        # MBO Integration: Higher chance to use coupon if deal seeker OR reward sensitive
+        deal_seek_prop = params.get("deal_seeking_propensity", 0.3)
+        reward_sens = params.get("reward_sensitivity", 0.5)
+        coupon_use_prob = max(deal_seek_prop * 0.5, reward_sens * 0.3) # Combine influences
+
+        if state.get("active_promotions") and random.random() < coupon_use_prob:
+             coupon_code = list(state["active_promotions"].keys())[0] # Simple: use first available
              coupon_details = state["active_promotions"].pop(coupon_code)
              discount_amount = coupon_details.get("value", 5.0) # Simplified discount
              total = max(0, total - discount_amount)
@@ -235,7 +261,7 @@ def generate_event_details(event_type, profile, current_timestamp):
         # Update state: add order, update brand purchase counts
         state.setdefault("orders", []).append({
             "order_id": order_id, "items": items_to_buy, "total": details["total_amount"],
-            "timestamp": current_timestamp, "status": "processing"
+            "timestamp": current_timestamp, "status": "processing" # Initial status
         })
         # Update brand counts for affinity modeling
         brand_counts = state.setdefault("brand_purchase_counts", {})
@@ -245,6 +271,79 @@ def generate_event_details(event_type, profile, current_timestamp):
             if brand and cat:
                 cat_brands = brand_counts.setdefault(cat, {})
                 cat_brands[brand] = cat_brands.get(brand, 0) + item["quantity"]
+
+    # --- MBO Integration: New Event Type ---
+    elif event_type == "reorder_item":
+        habit_speed = params.get("habit_formation_speed", 0.3)
+        eligible_items_for_reorder = []
+        min_reorder_days = 14 # Don't reorder too quickly
+        max_reorder_days = 180 # Don't consider items purchased too long ago
+
+        for order in reversed(state.get("orders", [])):
+            order_timestamp = order.get("timestamp")
+            if not order_timestamp: continue
+            days_since_order = (current_timestamp - order_timestamp).days
+            if min_reorder_days <= days_since_order <= max_reorder_days:
+                for item in order.get("items", []):
+                    # Basic check: avoid reordering if already in cart or recently ordered again
+                    in_cart = any(c_item['product_id'] == item['product_id'] for c_item in state.get("cart", []))
+                    recently_reordered = any(
+                        reorder_item['product_id'] == item['product_id'] and (current_timestamp - reorder['timestamp']).days < min_reorder_days
+                        for reorder in state.get("orders", []) if reorder.get("purchase_source") == "reorder"
+                        for reorder_item in reorder.get("items", [])
+                    )
+                    if not in_cart and not recently_reordered:
+                         eligible_items_for_reorder.append({"item": item, "days_since": days_since_order})
+
+        if not eligible_items_for_reorder: return None
+
+        # Calculate reorder probability for each eligible item
+        reorder_candidates = []
+        for candidate in eligible_items_for_reorder:
+            item = candidate["item"]
+            days_since = candidate["days_since"]
+            # Sigmoid function: probability increases faster with higher habit_speed
+            # Adjust scale and shift based on desired reorder frequency
+            # Example: scale=10 means habit_speed has stronger effect, shift moves the curve
+            scale = 10 * habit_speed
+            shift = 60 # Center the curve around 60 days
+            prob = 1 / (1 + math.exp(-(days_since - shift) / scale))
+            reorder_candidates.append((item, prob))
+
+        # Select item based on probability
+        chosen_item_data, chosen_prob = utils.select_weighted_item(reorder_candidates, weight_index=1) if reorder_candidates else (None, 0)
+
+        if chosen_item_data and random.random() < chosen_prob:
+            item_to_reorder = chosen_item_data
+            # Generate purchase details for the reordered item
+            total = item_to_reorder['price_per_item'] * item_to_reorder['quantity']
+            order_id = utils.generate_order_id()
+            details.update({
+                "order_id": order_id,
+                "items": [item_to_reorder], # Reorder typically one item at a time
+                "item_count": item_to_reorder['quantity'],
+                "distinct_item_count": 1,
+                "total_amount": round(total * state.get("seasonal_boost", 1.0), 2),
+                "payment_method": random.choice(["Credit Card", "Debit Card", "Amazon Pay"]), # Use common methods
+                "shipping_address_type": "Home", # Assume default
+                "shipping_speed": random.choice(["Standard", "Two-Day (Prime)"]) if state.get("is_prime") else "Standard",
+                "purchase_source": "reorder", # Mark as reorder
+                "coupon_used": None # Typically no coupon on simple reorder
+            })
+            # Update state: add order, update brand purchase counts
+            state.setdefault("orders", []).append({
+                "order_id": order_id, "items": [item_to_reorder], "total": details["total_amount"],
+                "timestamp": current_timestamp, "status": "processing", "purchase_source": "reorder"
+            })
+            # Update brand counts
+            brand_counts = state.setdefault("brand_purchase_counts", {})
+            brand = item_to_reorder.get("brand")
+            cat = item_to_reorder.get("category")
+            if brand and cat:
+                cat_brands = brand_counts.setdefault(cat, {})
+                cat_brands[brand] = cat_brands.get(brand, 0) + item_to_reorder["quantity"]
+        else:
+            return None # No reorder triggered
 
 
     elif event_type == "return_item":
@@ -268,12 +367,22 @@ def generate_event_details(event_type, profile, current_timestamp):
 
     # --- Other Events (Apply parameter influence where applicable) ---
     elif event_type == "browse_category":
-        # Session length/page view factors influence duration/views?
+        # MBO Integration: Session length/page view factors AND attention_focus influence duration/views
         page_factor = params.get("page_view_factor", 1.0)
         session_factor = params.get("session_length_factor", 1.0)
-        category = get_relevant_category(bias_towards_recent=0.3)
-        time_spent = random.randint(30, 600) * session_factor
-        products_viewed_in_browse = max(0, int(random.gauss(2, 2) * page_factor)) # Avg 2 views, influenced by factor
+        attention_focus = params.get("attention_focus", 0.5)
+        category = get_relevant_category(bias_towards_recent_base=0.3) # Lower bias for general browsing
+
+        # Base time + boost from attention + scaling by session factor
+        base_time = random.randint(30, 300)
+        attention_time_boost = attention_focus * 300 # Max boost 300s
+        time_spent = (base_time + attention_time_boost) * session_factor
+
+        # Base views + boost from attention + scaling by page factor
+        base_views = random.gauss(1, 1) # Avg 1 view base
+        attention_view_boost = attention_focus * 3 # Max boost 3 views
+        products_viewed_in_browse = max(0, int((base_views + attention_view_boost) * page_factor))
+
         details.update({ #... (browse details) ...
             "category_name": category, "time_spent_seconds": round(max(10, time_spent)),
             "products_viewed_count": products_viewed_in_browse,
@@ -339,7 +448,7 @@ def generate_event_details(event_type, profile, current_timestamp):
         # Shopping intent influenced by parameter
         alexa_shop_prop = params.get("alexa_shopping_propensity", 0.1)
         # ... (find echo device logic) ...
-        echo_devices = [d for d in state.get("devices", []) if "Echo" in d]
+        echo_devices = [d.get("name") for d in state.get("devices", []) if d.get("name") and "Echo" in d.get("name")] # Get names
         if not echo_devices: return None
 
         intent = random.choice(config.ALEXA_INTENTS)
@@ -392,30 +501,43 @@ if __name__ == '__main__':
         "profile_id": "cust_0001",
         "_internal_state": {
             "current_timestamp": mock_start_date, "current_age": 30,
-            "current_interests": {"Electronics", "Books", "Deals & Bargains"},
+            "current_interests": {"Electronics", "Books", "Deals & Bargains", "Household Supplies"},
             "is_prime": True, "used_services": {"Prime Membership", "Prime Video"},
-            "behavioral_params": { # Sample parameters
+            "behavioral_params": { # Sample parameters including MBO
                 "activity_level": 0.7, "review_read_propensity": 0.8, "review_write_propensity": 0.2,
                 "purchase_latency_factor": 0.8, "deal_seeking_propensity": 0.9, "brand_affinity_strength": 0.2,
                 "tech_adoption_propensity": 0.6, "cart_abandon_propensity": 0.2, "return_propensity": 0.1,
                 "session_length_factor": 1.2, "page_view_factor": 1.5, "comparison_shopping_prob": 0.7,
                 "subscribe_save_propensity": 0.1, "wishlist_usage_propensity": 0.6, "impulse_purchase_prob": 0.1,
                 "prime_video_engagement": 0.7, "amazon_music_engagement": 0.3, "kindle_engagement": 0.6,
-                "audible_engagement": 0.2, "alexa_shopping_propensity": 0.1
+                "audible_engagement": 0.2, "alexa_shopping_propensity": 0.1,
+                # MBO Params
+                "reward_sensitivity": 0.8, "attention_focus": 0.4, "category_exploration_propensity": 0.2, "habit_formation_speed": 0.7
             },
-            "devices": ["Mobile App (iOS)", "Desktop Website (Mac)", "Echo Device"], "primary_device": "Mobile App (iOS)",
-            "cart": [], "orders": [], "wishlist": set(), "viewed_products": [], "search_history": [],
+            "devices": [ # Store full dicts internally now
+                 {"name": "Mobile App (iOS)", "platform": "app", "conversion_rate": 0.038},
+                 {"name": "Desktop Website (Mac)", "platform": "web", "conversion_rate": 0.046},
+                 {"name": "Echo Device", "platform": "voice", "conversion_rate": 0.030}
+            ],
+            "primary_device": {"name": "Mobile App (iOS)", "platform": "app", "conversion_rate": 0.038}, # Store full dict internally
+            "cart": [],
+            "orders": [ # Add a sample past order for reorder testing
+                {"order_id": "ord_past_001", "items": [{"product_id": "prod_abc", "product_name": "Habitual Coffee Pods", "category": "Grocery", "quantity": 1, "price_per_item": 15.99, "brand": "BrandX"}], "total": 15.99, "timestamp": mock_start_date - datetime.timedelta(days=45), "status": "delivered"}
+            ],
+            "wishlist": set(), "viewed_products": [], "search_history": [],
             "last_event_timestamp": mock_start_date, "current_session_id": utils.generate_session_id(),
             "session_start_time": mock_start_date, "events_in_session": 0, "seasonal_boost": 1.0,
-            "brand_purchase_counts": {}
+            "brand_purchase_counts": {"Grocery": {"BrandX": 1}} # Reflect past order
         }
     }
 
     # Test events influenced by parameters
-    event_types_to_test = ["search", "view_product", "view_review", "clip_coupon", "purchase", "add_to_cart"]
+    event_types_to_test = ["search", "view_product", "browse_category", "view_review", "clip_coupon", "purchase", "add_to_cart", "reorder_item"]
     for etype in event_types_to_test:
         print(f"\n--- Generating '{etype}' ---")
-        event_details = generate_event_details(etype, mock_profile, datetime.datetime.now())
+        # Advance time slightly for reorder test
+        test_time = datetime.datetime.now() if etype != "reorder_item" else mock_start_date + datetime.timedelta(days=50)
+        event_details = generate_event_details(etype, mock_profile, test_time)
         if event_details:
             import json
             print(json.dumps(event_details, indent=2, default=str))

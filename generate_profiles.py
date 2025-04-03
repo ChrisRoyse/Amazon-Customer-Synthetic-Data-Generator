@@ -40,7 +40,7 @@ def main():
     start_index = config.START_PROFILE_INDEX
     filename_prefix = config.FILENAME_PREFIX
     filename_digits = config.FILENAME_DIGITS
-    sim_duration_days = config.SIMULATION_DURATION_YEARS * 365 # Use years for accuracy
+    sim_duration_days = config.SIMULATION_DURATION_DAYS # Use pre-calculated days from config
 
     # Create output directory if it doesn't exist
     if not os.path.exists(output_dir) and output_dir != ".":
@@ -65,7 +65,7 @@ def main():
 
     # Determine the simulation start date (relative to "now" when the script runs)
     # All profiles will share the same simulation time window for consistency
-    simulation_start_date_for_all = datetime.datetime.now() - datetime.timedelta(days=sim_duration_days)
+    simulation_start_date_for_all = datetime.datetime.now() - datetime.timedelta(days=config.SIMULATION_DURATION_DAYS) # Use config value directly
     logging.info(f"Simulation time window: {simulation_start_date_for_all.date()} to {datetime.datetime.now().date()}")
 
     # --- Generation Loop ---

@@ -4,6 +4,7 @@ import random
 import datetime
 import uuid
 import math
+import numpy as np
 import logging
 import json # &lt;-- Add this import
 
@@ -101,6 +102,58 @@ def generate_coupon_code():
     part1 = "".join(random.choices("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789", k=4))
     part2 = "".join(random.choices("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789", k=4))
     return f"{part1}-{part2}"
+
+
+# --- Statistical Sampling Functions ---
+
+def sample_normal(mean, std_dev, min_val=None, max_val=None):
+    """Sample from normal distribution with optional clamping"""
+    value = np.random.normal(mean, std_dev)
+    if min_val is not None:
+        value = max(min_val, value)
+    if max_val is not None:
+        value = min(max_val, value)
+    return value
+
+def sample_beta(alpha, beta, min_val=0, max_val=1):
+    """Sample from beta distribution, scaled to min/max"""
+    value = np.random.beta(alpha, beta)
+    return min_val + (max_val - min_val) * value
+
+def sample_exponential(scale, min_val=None, max_val=None):
+    """Sample from exponential distribution with optional clamping"""
+    value = np.random.exponential(scale)
+    if min_val is not None:
+        value = max(min_val, value)
+    if max_val is not None:
+        value = min(max_val, value)
+    return value
+
+def sample_pareto(shape, min_val=None, max_val=None):
+    """Sample from Pareto distribution with optional clamping"""
+    value = np.random.pareto(shape) + 1  # +1 so minimum value is 1
+    if min_val is not None:
+        value = max(min_val, value)
+    if max_val is not None:
+        value = min(max_val, value)
+    return value
+
+def sample_zipf(exponent, size=1, min_val=None, max_val=None):
+    """Sample from Zipf distribution with optional clamping"""
+    value = np.random.zipf(exponent, size)[0]
+    if min_val is not None:
+        value = max(min_val, value)
+    if max_val is not None:
+        value = min(max_val, value)
+    return value
+
+# Weighted random selection from distribution dictionary
+def sample_from_distribution(distribution_dict):
+    """Sample a key from a distribution dictionary where values are probabilities"""
+    items = list(distribution_dict.items())
+    keys = [item[0] for item in items]
+    probabilities = [item[1] for item in items]
+    return random.choices(keys, weights=probabilities, k=1)[0]
 
 # --- Product & Pricing Functions ---
 
@@ -211,18 +264,31 @@ def select_weighted_item(items_with_weights):
     # Should not reach here if total_weight > 0, but as a fallback:
     return items_with_weights[-1][0] if items_with_weights else None
 
-def get_value_from_archetype(profile_state, key, default=None):
-    """Safely gets a value from combined archetypes in profile state."""
-    if not isinstance(profile_state, dict): return default
+def get_seasonal_boost_from_config(current_date):
+    """Applies a boost to activity/spending around holidays/seasons."""
+    if not isinstance(current_date, datetime.datetime):
+        return 1.0 # Default if date is invalid
 
-    # Check primary archetypes first
-    for archetype_key in ['shopping_style', 'tech_savviness', 'personality_trait', 'life_stage']:
-        archetype_data = profile_state.get(archetype_key)
-        if isinstance(archetype_data, dict) and key in archetype_data:
-            return archetype_data[key]
+    month = current_date.month
+    day = current_date.day
+    boost = 1.0
 
-    # Could add checks for secondary/combined archetypes if implemented
-    return default
+    max_boost = 1.0 # Track the maximum boost found for the date
+
+    seasonal_peaks = config.SHOPPING_PATTERNS.get('seasonal_peaks', {})
+
+    for peak_name, peak_data in seasonal_peaks.items():
+        peak_months = peak_data.get("months")
+        peak_days = peak_data.get("days") # Optional list of specific days
+        peak_boost = peak_data.get("boost", 1.0)
+ # Corrected key from "boo5.\n"
+
+        if peak_months and month in peak_months:
+            # Check if specific days are defined and if the current day matches
+            if peak_days is None or day in peak_days:
+                max_boost = max(max_boost, peak_boost) # Apply the highest boost if multiple peaks match
+
+    return max_boost
 
 # --- Simulation Helpers ---
 
@@ -241,32 +307,8 @@ def calculate_event_time_delta(activity_level, seasonal_boost=1.0):
     time_delta_hours = random.expovariate(1.0 / mean_hours_between_events)
     return time_delta_hours
 
-def get_seasonal_boost(current_date):
-    """Applies a boost to activity/spending around holidays/seasons."""
-    if not isinstance(current_date, datetime.datetime):
-        return 1.0 # Default if date is invalid
-
-    month = current_date.month
-    day = current_date.day
-    boost = 1.0
-
-    # Major shopping season (Nov/Dec) - Prime Day often July
-    if month == 11: boost = 1.1 + (day / 30.0) * 0.5 # Ramp up faster
-    elif month == 12 and day <= 25: boost = 1.6 - (day / 25.0) * 0.3 # Higher peak
-    elif month == 7 and day > 5 and day < 20: boost = 1.3 # Prime Day(s) effect
-    # Other potential boosts (smaller)
-    elif (month == 1 and day < 15): boost = 1.1 # Post-holiday sales
-    elif (month == 2 and day > 5 and day < 20): boost = 1.05 # Valentine's
-    elif (month == 5 and day > 15) or (month == 6 and day < 20): boost = 1.1 # Mother's/Father's Day/Graduation
-    elif (month == 8 and day > 15) or (month == 9 and day < 15): boost = 1.15 # Back to School
-    # Summer dip? (Excluding Prime Day period)
-    elif month in [7, 8] and boost == 1.0: boost = 0.95
-
-    return boost
-
 # --- Output & File Helpers ---
-# (Removed estimate_line_count and truncate_activity_log functions)
-
+# (No file helpers currently needed)
 
 if __name__ == '__main__':
     # Example usage/tests
@@ -289,7 +331,7 @@ if __name__ == '__main__':
     print(f"Product Name (Clothing): {generate_product_name('Clothing')}")
     print(f"Product Name (Books): {generate_product_name('Books')}")
     print(f"Product Name (Smart Home): {generate_product_name('Smart Home')}")
-    print(f"Seasonal Boost (Dec 15): {get_seasonal_boost(datetime.datetime(2024, 12, 15))}")
-    print(f"Seasonal Boost (Jul 10): {get_seasonal_boost(datetime.datetime(2024, 7, 10))}") # Prime Day?
-    print(f"Seasonal Boost (Mar 5): {get_seasonal_boost(datetime.datetime(2024, 3, 5))}")
-    print("--- Utils Test Complete ---")
+    print(f"Seasonal Boost (Dec 15): {get_seasonal_boost_from_config(datetime.datetime(2024, 12, 15))}")
+    print(f"Seasonal Boost (Jul 12): {get_seasonal_boost_from_config(datetime.datetime(2024, 7, 12))}") # Prime Day?
+    print(f"Seasonal Boost (Mar 5): {get_seasonal_boost_from_config(datetime.datetime(2024, 3, 5))}")
+    print("--- Utils Test Complete ---") # Added newline implicitly by ending file here

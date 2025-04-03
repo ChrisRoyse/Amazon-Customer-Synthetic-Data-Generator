@@ -51,11 +51,12 @@ def check_for_minor_life_event(profile, days_since_last_event):
                     current_value = behavioral_params[param]
                     # Apply adjustment (can be additive or multiplicative based on config if needed)
                     new_value = current_value + adjustment # Simple additive adjustment
-                    # Clamp the value back to its original range defined in config
+                    # Clamp the value back to its original range defined in config, if range exists
                     param_config = config.BEHAVIORAL_PARAMS_CONFIG.get(param)
                     if param_config and "range" in param_config:
                         min_val, max_val = param_config["range"]
-                        new_value = max(min_val, min(max_val, new_value))
+                        if new_value is not None: # Ensure value is not None before clamping
+                            new_value = max(min_val, min(max_val, new_value))
                     behavioral_params[param] = new_value
                     logging.debug(f"  Param '{param}' adjusted to: {new_value:.3f}")
                 else:
@@ -264,7 +265,7 @@ def simulate_activity(profile):
             days_passed = (next_event_timestamp.date() - state["current_timestamp"].date()).days
             state["time_since_last_minor_event"] = state.get("time_since_last_minor_event", 0) + days_passed
             state["current_age"] += days_passed / 365.0
-            state["seasonal_boost"] = utils.get_seasonal_boost(next_event_timestamp)
+            state["seasonal_boost"] = utils.get_seasonal_boost_from_config(next_event_timestamp)
             # Check for minor life events that might perturb parameters
             if check_for_minor_life_event(profile, state["time_since_last_minor_event"]):
                 state["time_since_last_minor_event"] = 0
